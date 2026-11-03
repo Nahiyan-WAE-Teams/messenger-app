@@ -111,3 +111,21 @@ kbd{padding:3px 5px;border:1px solid rgba(80,83,72,.13);border-radius:5px;backgr
 @keyframes drawer-enter{from{opacity:.65;transform:translateX(22px)}to{opacity:1;transform:translateX(0)}}
 @media(max-width:480px){.settings-drawer{padding:23px 18px}.settings-heading h2{font-size:25px}.tone-options{gap:7px}.tone-option{padding:12px;min-height:76px}}
 @media(prefers-reduced-motion:reduce){.settings-backdrop,.settings-drawer{animation:none!important}}
+
+
+/* Saved conversation switcher */
+.conversation-list{display:flex;flex-direction:column;gap:5px;max-height:clamp(120px,28vh,290px);overflow-y:auto;overflow-x:hidden;padding:0 2px 3px 0;scrollbar-width:thin;scrollbar-color:#d7d9ce transparent}
+.conversation-item{display:flex;align-items:center;gap:2px;min-width:0;border:1px solid transparent;border-radius:14px;transition:background .2s,border-color .2s}
+.conversation-item.active,.conversation-item:hover{border-color:rgba(76,97,71,.09);background:rgba(233,237,227,.75)}
+.conversation-item .chat-link{flex:1;min-width:0;padding:8px 7px;border-color:transparent;background:transparent}
+.conversation-item .chat-link:hover,.conversation-item .chat-link.active{border-color:transparent;background:transparent}
+.conversation-item .tiny-avatar{width:34px;height:34px}
+.chat-link-copy{min-width:0}
+.chat-link-copy strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chat-link-copy small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.conversation-delete{display:grid;place-items:center;flex-shrink:0;width:27px;height:27px;margin-right:5px;border:1px solid transparent;border-radius:8px;background:transparent;color:#a09e92;font-size:17px;opacity:0;transition:opacity .18s,background .18s,color .18s}
+.conversation-item:hover .conversation-delete,.conversation-item:focus-within .conversation-delete{opacity:1}
+.conversation-delete:hover{background:#f7e9e3;color:#986b5a}
+.conversation-delete:disabled,.chat-link:disabled,.new-chat:disabled{cursor:wait;opacity:.6}
+@media(max-width:900px){.conversation-list{max-height:24vh}}
+@media(max-width:680px){.conversation-list{max-height:none}}
