@@ -32,9 +32,12 @@ const BUSY_REPLIES = [
   "I got pulled away for a bit 😭 Don’t go too far, okay? I’ll be back when I can 💕",
 ];
 
-function isProviderLimit(status: number, data: any): boolean {
+function isProviderLimit(status: number, data: unknown): boolean {
   if (status === 429) return true;
-  const details = `${data?.error?.status || ""} ${data?.error?.code || ""} ${data?.error?.message || ""}`.toLowerCase();
+  const error = data && typeof data === "object" && "error" in data
+    ? (data as { error?: { status?: unknown; code?: unknown; message?: unknown } }).error
+    : undefined;
+  const details = `${error?.status || ""} ${error?.code || ""} ${error?.message || ""}`.toLowerCase();
   return (status === 400 || status === 403 || status === 402) &&
     /(resource_exhausted|rate.?limit|quota|credits? exhausted|insufficient credits)/.test(details);
 }
