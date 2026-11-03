@@ -49,3 +49,17 @@ Only configure the provider you are using. Verify model availability and current
 - Browser-local chat history
 - Server-side Gemini and OpenRouter adapters
 - API key intentionally absent from the UI
+
+## Android APK testing
+
+A GitHub Actions workflow builds an installable **debug APK** when Android wrapper files change on `main`, or when you manually run **Actions → Build Android APK → Run workflow**.
+
+1. Open the repository's **Actions** tab and select **Build Android APK**.
+2. Open the latest successful run.
+3. Under **Artifacts**, download `mira-messenger-debug-apk` and extract the ZIP.
+4. Transfer `app-debug.apk` to your Android phone and install it. Android may ask you to allow installation from that source.
+5. On first launch, enter the HTTPS URL of your deployed Mira Messenger website.
+
+**Important:** this APK is a lightweight Android WebView wrapper, not a self-hosted server. The Next.js website and its `/api/chat` backend must be deployed and reachable over HTTPS for AI chat to work. The app asks for that URL on the phone and saves it locally. Keep Gemini/OpenRouter keys in the server environment only, never in the APK or browser. Chat history remains local to that WebView installation.
+
+The workflow uploads the debug APK as a temporary artifact for 14 days. It is for personal testing, not a signed Play Store release.
