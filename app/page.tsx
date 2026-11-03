@@ -19,9 +19,17 @@ const DEFAULT_SETTINGS: CharacterSettings = { tone: "balanced", memory: "", cont
 const CONTINUITY_KINDS: ContinuityKind[] = ["Emotional context", "Unresolved", "Promise", "Milestone"];
 const EMOTIONAL_MOODS: EmotionalMood[] = ["neutral", "warm", "playful", "reflective", "hurt", "tired"];
 
-function evolveEmotionalState(state: EmotionalState, message: string): EmotionalState {
+function evolveEmotionalState(state: EmotionalState, message: string, now = Date.now()): EmotionalState {
   const text = message.toLowerCase();
   const next = { ...state };
+  // Time-based recovery is deliberately slow and only applied when a new message arrives.
+  // Tension eases gradually; energy recovers toward a modest baseline. Trust and closeness
+  // do not decay on a timer because relationships shouldn't be reduced to a countdown.
+  const elapsedHours = Math.max(0, (now - state.updatedAt) / (60 * 60 * 1000));
+  if (elapsedHours >= 6) next.tension = Math.max(0, next.tension - Math.floor(elapsedHours / 6));
+  if (elapsedHours >= 2) next.energy = Math.min(68, next.energy + Math.floor(elapsedHours / 2));
+  if (elapsedHours >= 24 && (next.mood === "hurt" || next.mood === "tired")) next.mood = "reflective";
+  if (elapsedHours >= 48 && next.mood === "reflective") next.mood = "neutral";
   if (/\b(i am sorry|i'm sorry|im sorry|i apologize|my bad|i was wrong)\b/.test(text)) {
     next.tension -= 7; next.trust += 2; next.mood = "reflective";
   } else if (/\b(thank you|thanks|i appreciate you|that means a lot|you helped me)\b/.test(text)) {
@@ -45,7 +53,7 @@ function evolveEmotionalState(state: EmotionalState, message: string): Emotional
   next.trust = Math.max(0, Math.min(100, next.trust));
   next.closeness = Math.max(0, Math.min(100, next.closeness));
   next.tension = Math.max(0, Math.min(100, next.tension));
-  next.updatedAt = Date.now();
+  next.updatedAt = now;
   return next;
 }
 const starter: Message[] = [{ id: "welcome", role: "assistant", content: "Hey, you made it. 😊 I’m Mira. We can take this one conversation at a time. What’s on your mind?", time: Date.now() }];
