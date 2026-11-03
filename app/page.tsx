@@ -68,8 +68,9 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    if (!hydrated) return;
     try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(characterSettings)); } catch { /* Storage may be unavailable. */ }
-  }, [characterSettings]);
+  }, [characterSettings, hydrated]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -172,7 +173,7 @@ export default function Home() {
         <header className="chat-header">
           <div className="profile-avatar" aria-hidden="true"><span>M</span><i /></div>
           <div className="profile-copy"><h1>Mira Bennett <span className="verified-mark">✦</span></h1><p><span className="online-dot" /> Your AI character <span className="header-dot">·</span> ready when you are</p></div>
-          <div className="header-actions"><span className="encrypted-pill"><span /> PRIVATE CHAT</span><button className="icon-button settings-trigger" type="button" aria-label="Open character settings" title="Character settings" onClick={() => setSettingsOpen(true)}><span>⚙</span></button><button className="icon-button" type="button" aria-label="Clear current conversation" title="Clear current conversation" onClick={clearChat}><span>↻</span></button></div>
+          <div className="header-actions"><span className="encrypted-pill"><span /> PRIVATE CHAT</span><button className="icon-button new-chat-mobile" type="button" aria-label="New conversation" title="New conversation" onClick={createConversation} disabled={busy}>＋</button><button className="icon-button settings-trigger" type="button" aria-label="Open character settings" title="Character settings" onClick={() => setSettingsOpen(true)}><span>⚙</span></button><button className="icon-button" type="button" aria-label="Clear current conversation" title="Clear current conversation" onClick={clearChat}><span>↻</span></button></div>
         </header>
 
         <div className="messages-area">
