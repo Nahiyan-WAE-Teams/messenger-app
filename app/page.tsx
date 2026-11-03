@@ -21,7 +21,7 @@ function parseMemoryEntries(memory: string): MemoryEntry[] {
     const match = line.match(/^\[(Preferences|Stories|People|Milestones|General)\]\s*(.*)$/i);
     const category = match ? MEMORY_CATEGORIES.find((item) => item.toLowerCase() === match[1].toLowerCase()) || "General" : "General";
     return { category, text: (match ? match[2] : line).trim(), index };
-  }).filter((entry) => entry.text.length > 0 || /^\\[(Preferences|Stories|People|Milestones|General)\\]/i.test(memory.split("\\n")[entry.index] || ""));
+  }).filter((entry) => entry.text.length > 0 || /^\[(Preferences|Stories|People|Milestones|General)\]/i.test(memory.split("\n")[entry.index] || ""));
 }
 
 function encodeMemoryEntry(category: MemoryCategory, text: string) {
