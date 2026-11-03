@@ -2,7 +2,8 @@
 
 import { FormEvent, useEffect, useRef, useState } from "react";
 
-type Message = { id: string; role: "user" | "assistant"; content: string; time: number };
+type MemorySuggestion = { category: MemoryCategory; text: string; status: "pending" | "saved" | "dismissed" };
+type Message = { id: string; role: "user" | "assistant"; content: string; time: number; memorySuggestion?: MemorySuggestion };
 type Conversation = { id: string; title: string; updatedAt: number; messages: Message[] };
 const STORAGE_KEY = "mira-messenger-history-v1";
 const CONVERSATIONS_KEY = "mira-messenger-conversations-v1";
@@ -26,6 +27,24 @@ function parseMemoryEntries(memory: string): MemoryEntry[] {
 
 function encodeMemoryEntry(category: MemoryCategory, text: string) {
   return `[${category}] ${text.trim().replace(/\s+/g, " ")}`;
+}
+
+function suggestMemoryFromMessage(content: string): MemorySuggestion | undefined {
+  const text = content.trim().replace(/\s+/g, " ");
+  if (text.length < 8 || text.length > 240 || /\b(password|passcode|ssn|social security|credit card|bank account|financial|salary|debt|health|medical|doctor|therap|illness|disease|diagnos(?:ed|is)|medication|depress|anxiet|suicid|self-harm|politic|vote for|religion|religious|sexual orientation|gender identity|immigration status|exact address)\b/i.test(text)) return undefined;
+  const patterns: { pattern: RegExp; category: MemoryCategory; prefix: string }[] = [
+    { pattern: /\b(?:i like|i love|i enjoy|i prefer|my favorite is|my favourite is|i’m a fan of|i'm a fan of)\s+(.+)/i, category: "Preferences", prefix: "User likes" },
+    { pattern: /\b(?:i’m learning|i'm learning|i am learning|i’m working on|i'm working on|i am working on|i’m building|i'm building|i am building|i’ve been practicing|i've been practicing)\s+(.+)/i, category: "Stories", prefix: "User is working on" },
+    { pattern: /\b(?:i play|i collect|i spend a lot of time)\s+(.+)/i, category: "Preferences", prefix: "User enjoys" },
+  ];
+  for (const item of patterns) {
+    const match = text.match(item.pattern);
+    const detail = match?.[1]?.replace(/[.!?]+$/, "").trim();
+    if (detail && detail.length >= 3 && detail.length <= 120) {
+      return { category: item.category, text: item.prefix + " " + detail + ".", status: "pending" };
+    }
+  }
+  return undefined;
 }
 
 function timeLabel(timestamp: number) {
@@ -106,7 +125,7 @@ export default function Home() {
     const content = input.trim();
     if (!content || busy || !activeConversation) return;
     const conversationId = activeConversation.id;
-    const userMessage: Message = { id: crypto.randomUUID(), role: "user", content, time: Date.now() };
+    const userMessage: Message = { id: crypto.randomUUID(), role: "user", content, time: Date.now(), memorySuggestion: suggestMemoryFromMessage(content) };
     const next = [...activeConversation.messages, userMessage].slice(-200);
     const title = activeConversation.messages.some((message) => message.role === "user")
       ? activeConversation.title
@@ -144,6 +163,32 @@ export default function Home() {
     }
     setCharacterSettings((current) => ({ ...current, memory: [current.memory.trim(), entry].filter(Boolean).join("\n") }));
     setNotice("Saved to Mira’s shared memory notes. You can review or edit it in character settings.");
+  }
+
+  function handleMemorySuggestion(conversationId: string, messageId: string, action: "save" | "dismiss") {
+    const candidate = conversations.find((conversation) => conversation.id === conversationId)?.messages.find((message) => message.id === messageId)?.memorySuggestion;
+    if (!candidate || candidate.status !== "pending") return;
+    if (action === "save") {
+      const entry = encodeMemoryEntry(candidate.category, candidate.text);
+      const existing = characterSettings.memory.split("\n").map((line) => line.trim()).filter(Boolean);
+      if (existing.includes(entry)) {
+        setNotice("That detail is already in Mira’s memory.");
+      } else {
+        const combined = [characterSettings.memory.trim(), entry].filter(Boolean).join("\n");
+        if (combined.length > 1600) {
+          setNotice("Mira’s memory is full. Open settings and shorten or remove a note before saving this suggestion.");
+          return;
+        }
+        setCharacterSettings((current) => ({ ...current, memory: [current.memory.trim(), entry].filter(Boolean).join("\n") }));
+        setNotice("Saved the suggested detail to Mira’s memory.");
+      }
+    }
+    setConversations((current) => current.map((conversation) => conversation.id !== conversationId ? conversation : {
+      ...conversation,
+      messages: conversation.messages.map((message) => message.id !== messageId || !message.memorySuggestion ? message : {
+        ...message, memorySuggestion: { ...message.memorySuggestion, status: action === "save" ? "saved" : "dismissed" },
+      }),
+    }));
   }
 
   function addMemoryEntry() {
@@ -255,7 +300,7 @@ export default function Home() {
           {messages.map((message, index) => (
             <div className={`message-row ${message.role === "user" ? "mine" : "theirs"}`} key={message.id} style={{ animationDelay: `${Math.min(index * 45, 240)}ms` }}>
               {message.role === "assistant" && <div className="message-avatar"><span>M</span></div>}
-              <div className="message-content"><div className="bubble">{message.content}</div><div className="message-meta"><time>{timeLabel(message.time)}</time>{message.role === "user" && <span className="read-receipt" title="Sent">✓✓</span>}{message.id !== "welcome" && <button className="remember-message" type="button" onClick={() => rememberMessage(message)} title="Save this message to memory">✳ Remember</button>}</div></div>
+              <div className="message-content"><div className="bubble">{message.content}</div><div className="message-meta"><time>{timeLabel(message.time)}</time>{message.role === "user" && <span className="read-receipt" title="Sent">✓✓</span>}{message.id !== "welcome" && <button className="remember-message" type="button" onClick={() => rememberMessage(message)} title="Save this message to memory">✳ Remember</button>}{message.role === "user" && message.memorySuggestion?.status === "pending" && <div className="memory-suggestion"><div className="memory-suggestion-copy"><span className="memory-suggestion-icon">✳</span><span><strong>Worth remembering?</strong><small>Mira could keep this detail across chats. Nothing is saved unless you choose.</small></span></div><div className="memory-suggestion-actions"><button type="button" onClick={() => handleMemorySuggestion(activeConversation?.id || "", message.id, "save")}>Save detail</button><button type="button" className="memory-suggestion-dismiss" onClick={() => handleMemorySuggestion(activeConversation?.id || "", message.id, "dismiss")}>Not now</button></div></div>}{message.memorySuggestion && message.memorySuggestion.status !== "pending" && <small className="memory-suggestion-status">{message.memorySuggestion.status === "saved" ? "✳ Saved to Mira’s memory" : "Suggestion dismissed"}</small>}</div></div>
             </div>
           ))}
           {busy && <div className="message-row theirs typing-row"><div className="message-avatar"><span>M</span></div><div className="message-content"><div className="bubble typing"><span /><span /><span /></div><small className="typing-label">Mira is finding her words</small></div></div>}
