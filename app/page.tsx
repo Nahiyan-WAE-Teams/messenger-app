@@ -113,17 +113,17 @@ export default function Home() {
   function rememberMessage(message: Message) {
     const label = message.role === "user" ? "You" : "Mira";
     const entry = `• ${label}: ${message.content.trim()}`;
-    const existing = characterSettings.memory.split("\\n").map((line) => line.trim()).filter(Boolean);
+    const existing = characterSettings.memory.split("\n").map((line) => line.trim()).filter(Boolean);
     if (existing.includes(entry)) {
       setNotice("That message is already in Mira’s shared memory notes.");
       return;
     }
-    const combined = [characterSettings.memory.trim(), entry].filter(Boolean).join("\\n");
+    const combined = [characterSettings.memory.trim(), entry].filter(Boolean).join("\n");
     if (combined.length > 1600) {
       setNotice("Mira’s memory notes are full. Open settings and edit or shorten them before saving this message.");
       return;
     }
-    setCharacterSettings((current) => ({ ...current, memory: [current.memory.trim(), entry].filter(Boolean).join("\\n") }));
+    setCharacterSettings((current) => ({ ...current, memory: [current.memory.trim(), entry].filter(Boolean).join("\n") }));
     setNotice("Saved to Mira’s shared memory notes. You can review or edit it in character settings.");
   }
 
