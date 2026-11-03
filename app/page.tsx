@@ -4,6 +4,10 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 
 type Message = { id: string; role: "user" | "assistant"; content: string; time: number };
 const STORAGE_KEY = "mira-messenger-history-v1";
+const SETTINGS_KEY = "mira-messenger-settings-v1";
+type CharacterTone = "balanced" | "playful" | "gentle" | "direct";
+type CharacterSettings = { tone: CharacterTone; memory: string };
+const DEFAULT_SETTINGS: CharacterSettings = { tone: "balanced", memory: "" };
 const starter: Message[] = [{ id: "welcome", role: "assistant", content: "Hey, you made it. 😊 I’m Mira. We can take this one conversation at a time. What’s on your mind?", time: Date.now() }];
 
 function timeLabel(timestamp: number) {
@@ -15,11 +19,20 @@ export default function Home() {
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [characterSettings, setCharacterSettings] = useState<CharacterSettings>(DEFAULT_SETTINGS);
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     try {
+      const savedSettings = localStorage.getItem(SETTINGS_KEY);
+      if (savedSettings) {
+        const parsedSettings = JSON.parse(savedSettings);
+        if (parsedSettings && ["balanced", "playful", "gentle", "direct"].includes(parsedSettings.tone) && typeof parsedSettings.memory === "string") {
+          setCharacterSettings({ tone: parsedSettings.tone, memory: parsedSettings.memory.slice(0, 1600) });
+        }
+      }
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
@@ -27,6 +40,10 @@ export default function Home() {
       }
     } catch { /* Ignore invalid local history. */ }
   }, []);
+
+  useEffect(() => {
+    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(characterSettings)); } catch { /* Storage may be unavailable. */ }
+  }, [characterSettings]);
 
   useEffect(() => {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(messages.slice(-200))); } catch { /* Storage may be unavailable. */ }
@@ -47,7 +64,7 @@ export default function Home() {
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: next.filter((m) => m.id !== "welcome").map(({ role, content }) => ({ role, content })).slice(-30) }),
+        body: JSON.stringify({ messages: next.filter((m) => m.id !== "welcome").map(({ role, content }) => ({ role, content })).slice(-30), characterSettings }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data?.error || "Something went wrong.");
@@ -94,7 +111,7 @@ export default function Home() {
         <header className="chat-header">
           <div className="profile-avatar" aria-hidden="true"><span>M</span><i /></div>
           <div className="profile-copy"><h1>Mira Bennett <span className="verified-mark">✦</span></h1><p><span className="online-dot" /> Your AI character <span className="header-dot">·</span> ready when you are</p></div>
-          <div className="header-actions"><span className="encrypted-pill"><span /> PRIVATE CHAT</span><button className="icon-button" type="button" aria-label="Clear conversation" title="Clear conversation" onClick={clearChat}><span>↻</span></button></div>
+          <div className="header-actions"><span className="encrypted-pill"><span /> PRIVATE CHAT</span><button className="icon-button settings-trigger" type="button" aria-label="Open character settings" title="Character settings" onClick={() => setSettingsOpen(true)}><span>⚙</span></button><button className="icon-button" type="button" aria-label="Clear conversation" title="Clear conversation" onClick={clearChat}><span>↻</span></button></div>
         </header>
 
         <div className="messages-area">
@@ -121,6 +138,17 @@ export default function Home() {
           <div className="composer-foot"><span><kbd>↵</kbd> to send <span className="foot-separator">·</span> <kbd>⇧ ↵</kbd> new line</span><span className="powered-label"><span className="powered-dot" /> MADE FOR MEANINGFUL MOMENTS</span></div>
         </div>
       </section>
+      {settingsOpen && <div className="settings-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSettingsOpen(false); }}>
+        <section className="settings-drawer" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+          <div className="settings-heading"><div><span className="settings-eyebrow">MAKE THIS SPACE YOURS</span><h2 id="settings-title">A little personalization</h2><p>Fine-tune Mira’s conversational feel and keep a few useful details close.</p></div><button className="icon-button settings-close" type="button" aria-label="Close settings" onClick={() => setSettingsOpen(false)}>×</button></div>
+          <div className="settings-section"><span className="settings-label">CONVERSATION VIBE</span><div className="tone-options">
+            {([{ id: "balanced", title: "Balanced", detail: "Natural and nuanced" }, { id: "playful", title: "Playful", detail: "More wit and teasing" }, { id: "gentle", title: "Gentle", detail: "Softer and reassuring" }, { id: "direct", title: "Direct", detail: "Clear and candid" }] as const).map((tone) => <button key={tone.id} type="button" className={characterSettings.tone === tone.id ? "tone-option selected" : "tone-option"} aria-pressed={characterSettings.tone === tone.id} onClick={() => setCharacterSettings((current) => ({ ...current, tone: tone.id }))}><span className="tone-check">{characterSettings.tone === tone.id ? "✓" : ""}</span><strong>{tone.title}</strong><small>{tone.detail}</small></button>)}
+          </div></div>
+          <div className="settings-section"><label className="settings-label" htmlFor="memory-notes">MIRA’S MEMORY NOTES</label><p className="settings-help">Add stable details, preferences, or ongoing story context you want Mira to use. Keep it brief and avoid secrets.</p><textarea id="memory-notes" className="memory-input" value={characterSettings.memory} maxLength={1600} onChange={(event) => setCharacterSettings((current) => ({ ...current, memory: event.target.value }))} placeholder={"Example: I prefer honest advice over automatic agreement. We’re slowly developing a cozy, teasing friendship."} /><div className="memory-footer"><span>Saved in this browser only</span><span>{characterSettings.memory.length}/1600</span></div></div>
+          <div className="settings-privacy"><span>✳</span><p>These notes are stored in your browser and sent with chat requests so the AI can use them. They are not a secure vault.</p></div>
+          <button className="settings-done" type="button" onClick={() => setSettingsOpen(false)}>Save preferences <span>↗</span></button>
+        </section>
+      </div>}
     </main>
   );
 }
