@@ -110,6 +110,23 @@ export default function Home() {
     } finally { setBusy(false); inputRef.current?.focus(); }
   }
 
+  function rememberMessage(message: Message) {
+    const label = message.role === "user" ? "You" : "Mira";
+    const entry = `• ${label}: ${message.content.trim()}`;
+    const existing = characterSettings.memory.split("\\n").map((line) => line.trim()).filter(Boolean);
+    if (existing.includes(entry)) {
+      setNotice("That message is already in Mira’s shared memory notes.");
+      return;
+    }
+    const combined = [characterSettings.memory.trim(), entry].filter(Boolean).join("\\n");
+    if (combined.length > 1600) {
+      setNotice("Mira’s memory notes are full. Open settings and edit or shorten them before saving this message.");
+      return;
+    }
+    setCharacterSettings((current) => ({ ...current, memory: [current.memory.trim(), entry].filter(Boolean).join("\\n") }));
+    setNotice("Saved to Mira’s shared memory notes. You can review or edit it in character settings.");
+  }
+
   function createConversation() {
     if (busy) return;
     const now = Date.now();
@@ -182,7 +199,7 @@ export default function Home() {
           {messages.map((message, index) => (
             <div className={`message-row ${message.role === "user" ? "mine" : "theirs"}`} key={message.id} style={{ animationDelay: `${Math.min(index * 45, 240)}ms` }}>
               {message.role === "assistant" && <div className="message-avatar"><span>M</span></div>}
-              <div className="message-content"><div className="bubble">{message.content}</div><div className="message-meta"><time>{timeLabel(message.time)}</time>{message.role === "user" && <span className="read-receipt" title="Sent">✓✓</span>}</div></div>
+              <div className="message-content"><div className="bubble">{message.content}</div><div className="message-meta"><time>{timeLabel(message.time)}</time>{message.role === "user" && <span className="read-receipt" title="Sent">✓✓</span>}{message.id !== "welcome" && <button className="remember-message" type="button" onClick={() => rememberMessage(message)} title="Save this message to memory">✳ Remember</button>}</div></div>
             </div>
           ))}
           {busy && <div className="message-row theirs typing-row"><div className="message-avatar"><span>M</span></div><div className="message-content"><div className="bubble typing"><span /><span /><span /></div><small className="typing-label">Mira is finding her words</small></div></div>}
@@ -206,7 +223,7 @@ export default function Home() {
           <div className="settings-section"><span className="settings-label">CONVERSATION VIBE</span><div className="tone-options">
             {([{ id: "balanced", title: "Balanced", detail: "Natural and nuanced" }, { id: "playful", title: "Playful", detail: "More wit and teasing" }, { id: "gentle", title: "Gentle", detail: "Softer and reassuring" }, { id: "direct", title: "Direct", detail: "Clear and candid" }] as const).map((tone) => <button key={tone.id} type="button" className={characterSettings.tone === tone.id ? "tone-option selected" : "tone-option"} aria-pressed={characterSettings.tone === tone.id} onClick={() => setCharacterSettings((current) => ({ ...current, tone: tone.id }))}><span className="tone-check">{characterSettings.tone === tone.id ? "✓" : ""}</span><strong>{tone.title}</strong><small>{tone.detail}</small></button>)}
           </div></div>
-          <div className="settings-section"><label className="settings-label" htmlFor="memory-notes">MIRA’S MEMORY NOTES</label><p className="settings-help">Add stable details, preferences, or ongoing story context you want Mira to use. Keep it brief and avoid secrets.</p><textarea id="memory-notes" className="memory-input" value={characterSettings.memory} maxLength={1600} onChange={(event) => setCharacterSettings((current) => ({ ...current, memory: event.target.value }))} placeholder={"Example: I prefer honest advice over automatic agreement. We’re slowly developing a cozy, teasing friendship."} /><div className="memory-footer"><span>Saved in this browser only</span><span>{characterSettings.memory.length}/1600</span></div></div>
+          <div className="settings-section"><label className="settings-label" htmlFor="memory-notes">MIRA’S MEMORY NOTES</label><p className="settings-help">Shared across every conversation. Add stable details, preferences, or story context, or use Remember beneath a message to save it here. Keep it brief and avoid secrets.</p><textarea id="memory-notes" className="memory-input" value={characterSettings.memory} maxLength={1600} onChange={(event) => setCharacterSettings((current) => ({ ...current, memory: event.target.value }))} placeholder={"Example: I prefer honest advice over automatic agreement. We’re slowly developing a cozy, teasing friendship."} /><div className="memory-footer"><span>Shared across chats · saved in this browser</span><span>{characterSettings.memory.length}/1600</span></div></div>
           <div className="settings-privacy"><span>✳</span><p>These notes are stored in your browser and sent with chat requests so the AI can use them. They are not a secure vault.</p></div>
           <button className="settings-done" type="button" onClick={() => setSettingsOpen(false)}>Save preferences <span>↗</span></button>
         </section>
