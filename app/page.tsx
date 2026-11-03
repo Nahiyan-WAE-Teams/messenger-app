@@ -3,7 +3,9 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 
 type Message = { id: string; role: "user" | "assistant"; content: string; time: number };
+type Conversation = { id: string; title: string; updatedAt: number; messages: Message[] };
 const STORAGE_KEY = "mira-messenger-history-v1";
+const CONVERSATIONS_KEY = "mira-messenger-conversations-v1";
 const SETTINGS_KEY = "mira-messenger-settings-v1";
 type CharacterTone = "balanced" | "playful" | "gentle" | "direct";
 type CharacterSettings = { tone: CharacterTone; memory: string };
@@ -15,7 +17,11 @@ function timeLabel(timestamp: number) {
 }
 
 export default function Home() {
-  const [messages, setMessages] = useState<Message[]>(starter);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [activeConversationId, setActiveConversationId] = useState("");
+  const [hydrated, setHydrated] = useState(false);
+  const activeConversation = conversations.find((conversation) => conversation.id === activeConversationId) ?? conversations[0];
+  const messages = activeConversation?.messages ?? starter;
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
@@ -33,12 +39,32 @@ export default function Home() {
           setCharacterSettings({ tone: parsedSettings.tone, memory: parsedSettings.memory.slice(0, 1600) });
         }
       }
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length) setMessages(parsed);
+      const savedConversations = localStorage.getItem(CONVERSATIONS_KEY);
+      if (savedConversations) {
+        const parsed = JSON.parse(savedConversations);
+        if (Array.isArray(parsed) && parsed.length && parsed.every((item) => item && typeof item.id === "string" && Array.isArray(item.messages))) {
+          const safe = parsed.slice(0, 50) as Conversation[];
+          setConversations(safe);
+          const savedActiveId = localStorage.getItem("mira-messenger-active-conversation-v1");
+          setActiveConversationId(safe.some((item) => item.id === savedActiveId) ? savedActiveId! : safe[0].id);
+        } else {
+          const fallback: Conversation = { id: crypto.randomUUID(), title: "Our conversation", updatedAt: Date.now(), messages: starter };
+          setConversations([fallback]); setActiveConversationId(fallback.id);
+        }
+      } else {
+        const oldHistory = localStorage.getItem(STORAGE_KEY);
+        let initialMessages = starter;
+        if (oldHistory) {
+          const parsed = JSON.parse(oldHistory);
+          if (Array.isArray(parsed) && parsed.length) initialMessages = parsed;
+        }
+        const migrated: Conversation = { id: crypto.randomUUID(), title: "Our conversation", updatedAt: Date.now(), messages: initialMessages };
+        setConversations([migrated]); setActiveConversationId(migrated.id);
       }
-    } catch { /* Ignore invalid local history. */ }
+    } catch {
+      const fallback: Conversation = { id: crypto.randomUUID(), title: "Our conversation", updatedAt: Date.now(), messages: starter };
+      setConversations([fallback]); setActiveConversationId(fallback.id);
+    } finally { setHydrated(true); }
   }, []);
 
   useEffect(() => {
@@ -46,42 +72,73 @@ export default function Home() {
   }, [characterSettings]);
 
   useEffect(() => {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(messages.slice(-200))); } catch { /* Storage may be unavailable. */ }
+    if (!hydrated) return;
+    try {
+      localStorage.setItem(CONVERSATIONS_KEY, JSON.stringify(conversations.slice(0, 50).map((conversation) => ({ ...conversation, messages: conversation.messages.slice(-200) }))));
+      localStorage.setItem("mira-messenger-active-conversation-v1", activeConversationId);
+      localStorage.removeItem(STORAGE_KEY);
+    } catch { /* Storage may be unavailable. */ }
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [messages, busy]);
+  }, [conversations, activeConversationId, busy, hydrated]);
 
   async function sendMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const content = input.trim();
-    if (!content || busy) return;
+    if (!content || busy || !activeConversation) return;
+    const conversationId = activeConversation.id;
     const userMessage: Message = { id: crypto.randomUUID(), role: "user", content, time: Date.now() };
-    const next = [...messages, userMessage].slice(-40);
-    setMessages(next);
-    setInput("");
-    setBusy(true);
-    setNotice("");
+    const next = [...activeConversation.messages, userMessage].slice(-200);
+    const title = activeConversation.messages.some((message) => message.role === "user")
+      ? activeConversation.title
+      : content.slice(0, 36) + (content.length > 36 ? "…" : "");
+    setConversations((current) => current.map((conversation) => conversation.id === conversationId
+      ? { ...conversation, title, updatedAt: Date.now(), messages: next } : conversation));
+    setInput(""); setBusy(true); setNotice("");
     try {
       const response = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messages: next.filter((m) => m.id !== "welcome").map(({ role, content }) => ({ role, content })).slice(-30), characterSettings }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data?.error || "Something went wrong.");
-      setMessages((current) => [...current, { id: crypto.randomUUID(), role: "assistant", content: data.reply, time: Date.now() }].slice(-200));
+      setConversations((current) => current.map((conversation) => conversation.id === conversationId
+        ? { ...conversation, updatedAt: Date.now(), messages: [...conversation.messages, { id: crypto.randomUUID(), role: "assistant", content: data.reply, time: Date.now() }].slice(-200) }
+        : conversation));
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Couldn't send that message.");
-    } finally {
-      setBusy(false);
-      inputRef.current?.focus();
-    }
+    } finally { setBusy(false); inputRef.current?.focus(); }
+  }
+
+  function createConversation() {
+    if (busy) return;
+    const now = Date.now();
+    const conversation: Conversation = { id: crypto.randomUUID(), title: "New conversation", updatedAt: now, messages: [{ ...starter[0], id: crypto.randomUUID(), time: now }] };
+    setConversations((current) => [conversation, ...current].slice(0, 50));
+    setActiveConversationId(conversation.id); setNotice(""); setInput("");
+    inputRef.current?.focus();
   }
 
   function clearChat() {
-    if (!window.confirm("Clear this conversation from this browser?")) return;
-    setMessages([{ ...starter[0], id: crypto.randomUUID(), time: Date.now() }]);
+    if (!activeConversation || !window.confirm("Clear this conversation's messages? Other conversations will be kept.")) return;
+    const now = Date.now();
+    const freshMessages = [{ ...starter[0], id: crypto.randomUUID(), time: now }];
+    setConversations((current) => current.map((conversation) => conversation.id === activeConversation.id
+      ? { ...conversation, title: "New conversation", updatedAt: now, messages: freshMessages } : conversation));
+    setNotice(""); setInput("");
+  }
+
+  function deleteConversation(conversationId: string) {
+    if (busy || !window.confirm("Delete this conversation from this browser?")) return;
+    const remaining = conversations.filter((conversation) => conversation.id !== conversationId);
+    if (remaining.length === 0) {
+      const now = Date.now();
+      const fresh: Conversation = { id: crypto.randomUUID(), title: "New conversation", updatedAt: now, messages: [{ ...starter[0], id: crypto.randomUUID(), time: now }] };
+      setConversations([fresh]); setActiveConversationId(fresh.id);
+    } else {
+      setConversations(remaining);
+      if (activeConversationId === conversationId) setActiveConversationId(remaining[0].id);
+    }
     setNotice("");
-    localStorage.removeItem(STORAGE_KEY);
   }
 
   return (
@@ -90,13 +147,17 @@ export default function Home() {
       <div className="ambient ambient-two" aria-hidden="true" />
       <aside className="sidebar">
         <a className="brand" href="#" aria-label="Mira home"><span className="brand-mark"><span>m</span><i>✳</i></span><span className="brand-wordmark">mira<span className="brand-period">.</span><small>YOUR PRIVATE UNIVERSE</small></span></a>
-        <button className="new-chat" onClick={clearChat} type="button"><span className="plus-icon">＋</span> New conversation <kbd>⌘ K</kbd></button>
+        <button className="new-chat" onClick={createConversation} type="button" disabled={busy}><span className="plus-icon">＋</span> New conversation <kbd>⌘ K</kbd></button>
         <div className="side-label">YOUR SPACE</div>
-        <button className="chat-link active" type="button" onClick={() => inputRef.current?.focus()}>
-          <span className="tiny-avatar"><span>M</span><i /></span>
-          <span className="chat-link-copy"><strong>Mira Bennett</strong><small>Where we left off</small></span>
-          <span className="chat-link-more">···</span>
-        </button>
+        <div className="conversation-list" aria-label="Saved conversations">
+          {conversations.map((conversation) => <div className={`conversation-item ${conversation.id === activeConversationId ? "active" : ""}`} key={conversation.id}>
+            <button className={`chat-link ${conversation.id === activeConversationId ? "active" : ""}`} type="button" onClick={() => { if (!busy) { setActiveConversationId(conversation.id); setNotice(""); } }} disabled={busy} title={conversation.title}>
+              <span className="tiny-avatar"><span>M</span><i /></span>
+              <span className="chat-link-copy"><strong>{conversation.title || "New conversation"}</strong><small>{new Date(conversation.updatedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })} · {conversation.messages.length} messages</small></span>
+            </button>
+            <button className="conversation-delete" type="button" aria-label={`Delete ${conversation.title}`} title="Delete conversation" disabled={busy} onClick={() => deleteConversation(conversation.id)}>×</button>
+          </div>)}
+        </div>
         <div className="sidebar-feature">
           <div className="feature-orbit"><span className="orbit-star">✳</span><span className="orbit-dot" /><span className="orbit-dot orbit-dot-two" /><div className="feature-avatar">M</div></div>
           <span className="feature-eyebrow">A LITTLE SPACE, JUST FOR YOU</span>
@@ -111,7 +172,7 @@ export default function Home() {
         <header className="chat-header">
           <div className="profile-avatar" aria-hidden="true"><span>M</span><i /></div>
           <div className="profile-copy"><h1>Mira Bennett <span className="verified-mark">✦</span></h1><p><span className="online-dot" /> Your AI character <span className="header-dot">·</span> ready when you are</p></div>
-          <div className="header-actions"><span className="encrypted-pill"><span /> PRIVATE CHAT</span><button className="icon-button settings-trigger" type="button" aria-label="Open character settings" title="Character settings" onClick={() => setSettingsOpen(true)}><span>⚙</span></button><button className="icon-button" type="button" aria-label="Clear conversation" title="Clear conversation" onClick={clearChat}><span>↻</span></button></div>
+          <div className="header-actions"><span className="encrypted-pill"><span /> PRIVATE CHAT</span><button className="icon-button settings-trigger" type="button" aria-label="Open character settings" title="Character settings" onClick={() => setSettingsOpen(true)}><span>⚙</span></button><button className="icon-button" type="button" aria-label="Clear current conversation" title="Clear current conversation" onClick={clearChat}><span>↻</span></button></div>
         </header>
 
         <div className="messages-area">
