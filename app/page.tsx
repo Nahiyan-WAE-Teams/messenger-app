@@ -21,7 +21,7 @@ function parseMemoryEntries(memory: string): MemoryEntry[] {
     const match = line.match(/^\[(Preferences|Stories|People|Milestones|General)\]\s*(.*)$/i);
     const category = match ? MEMORY_CATEGORIES.find((item) => item.toLowerCase() === match[1].toLowerCase()) || "General" : "General";
     return { category, text: (match ? match[2] : line).trim(), index };
-  }).filter((entry) => entry.text.length > 0);
+  }).filter((entry) => entry.text.length > 0 || /^\\[(Preferences|Stories|People|Milestones|General)\\]/i.test(memory.split("\\n")[entry.index] || ""));
 }
 
 function encodeMemoryEntry(category: MemoryCategory, text: string) {
@@ -166,9 +166,14 @@ export default function Home() {
   }
 
   function updateMemoryEntry(index: number, category: MemoryCategory, text: string) {
-    const lines = characterSettings.memory.split("\n");
-    lines[index] = text.trim() ? encodeMemoryEntry(category, text) : "";
-    setCharacterSettings((current) => ({ ...current, memory: lines.filter((line) => line.trim()).join("\n").slice(0, 1600) }));
+    const lines = characterSettings.memory.split("\\n");
+    lines[index] = encodeMemoryEntry(category, text);
+    const combined = lines.filter((line) => line.trim()).join("\\n");
+    if (combined.length > 1600) {
+      setNotice("That edit would exceed the memory limit. Shorten the note a little.");
+      return;
+    }
+    setCharacterSettings((current) => ({ ...current, memory: combined }));
   }
 
   function deleteMemoryEntry(index: number) {
