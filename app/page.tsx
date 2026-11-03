@@ -9,8 +9,11 @@ const STORAGE_KEY = "mira-messenger-history-v1";
 const CONVERSATIONS_KEY = "mira-messenger-conversations-v1";
 const SETTINGS_KEY = "mira-messenger-settings-v1";
 type CharacterTone = "balanced" | "playful" | "gentle" | "direct";
-type CharacterSettings = { tone: CharacterTone; memory: string };
-const DEFAULT_SETTINGS: CharacterSettings = { tone: "balanced", memory: "" };
+type ContinuityKind = "Emotional context" | "Unresolved" | "Promise" | "Milestone";
+type ContinuityEntry = { id: string; kind: ContinuityKind; text: string; createdAt: number };
+type CharacterSettings = { tone: CharacterTone; memory: string; continuity: ContinuityEntry[] };
+const DEFAULT_SETTINGS: CharacterSettings = { tone: "balanced", memory: "", continuity: [] };
+const CONTINUITY_KINDS: ContinuityKind[] = ["Emotional context", "Unresolved", "Promise", "Milestone"];
 const starter: Message[] = [{ id: "welcome", role: "assistant", content: "Hey, you made it. 😊 I’m Mira. We can take this one conversation at a time. What’s on your mind?", time: Date.now() }];
 
 const MEMORY_CATEGORIES = ["Preferences", "Stories", "People", "Milestones", "General"] as const;
@@ -65,6 +68,8 @@ export default function Home() {
   const [memoryDraft, setMemoryDraft] = useState("");
   const [memoryCategory, setMemoryCategory] = useState<MemoryCategory>("Preferences");
   const [memoryFilter, setMemoryFilter] = useState("All");
+  const [continuityDraft, setContinuityDraft] = useState("");
+  const [continuityKind, setContinuityKind] = useState<ContinuityKind>("Emotional context");
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -74,7 +79,11 @@ export default function Home() {
       if (savedSettings) {
         const parsedSettings = JSON.parse(savedSettings);
         if (parsedSettings && ["balanced", "playful", "gentle", "direct"].includes(parsedSettings.tone) && typeof parsedSettings.memory === "string") {
-          setCharacterSettings({ tone: parsedSettings.tone, memory: parsedSettings.memory.slice(0, 1600) });
+          const savedContinuity = Array.isArray(parsedSettings.continuity) ? parsedSettings.continuity
+            .filter((item: unknown) => item && typeof item === "object" && typeof (item as ContinuityEntry).id === "string" &&
+              CONTINUITY_KINDS.includes((item as ContinuityEntry).kind) && typeof (item as ContinuityEntry).text === "string")
+            .slice(-12).map((item: ContinuityEntry) => ({ ...item, text: item.text.trim().slice(0, 220) })).filter((item: ContinuityEntry) => item.text.length > 0) : [];
+          setCharacterSettings({ tone: parsedSettings.tone, memory: parsedSettings.memory.slice(0, 1600), continuity: savedContinuity });
         }
       }
       const savedConversations = localStorage.getItem(CONVERSATIONS_KEY);
@@ -228,6 +237,32 @@ export default function Home() {
     setNotice("Removed that note from Mira’s memory.");
   }
 
+  function addContinuityEntry() {
+    const text = continuityDraft.trim().replace(/\s+/g, " ");
+    if (!text) return;
+    if (text.length > 220) {
+      setNotice("Keep each continuity note under 220 characters.");
+      return;
+    }
+    const duplicate = characterSettings.continuity.some((entry) => entry.kind === continuityKind && entry.text.toLowerCase() === text.toLowerCase());
+    if (duplicate) {
+      setNotice("That continuity note is already saved.");
+      return;
+    }
+    if (characterSettings.continuity.length >= 12) {
+      setNotice("The continuity journal holds up to 12 notes. Remove an old note to make room.");
+      return;
+    }
+    setCharacterSettings((current) => ({ ...current, continuity: [...current.continuity, { id: crypto.randomUUID(), kind: continuityKind, text, createdAt: Date.now() }] }));
+    setContinuityDraft("");
+    setNotice("Added to Mira’s continuity journal.");
+  }
+
+  function deleteContinuityEntry(id: string) {
+    setCharacterSettings((current) => ({ ...current, continuity: current.continuity.filter((entry) => entry.id !== id) }));
+    setNotice("Removed that continuity note.");
+  }
+
   function createConversation() {
     if (busy) return;
     const now = Date.now();
@@ -330,7 +365,12 @@ export default function Home() {
             <div className="memory-entry-list">{parseMemoryEntries(characterSettings.memory).filter((entry) => memoryFilter === "All" || entry.category === memoryFilter).map((entry) => <article className="memory-entry" key={entry.index}><div className="memory-entry-top"><span className={`memory-category-tag category-${entry.category.toLowerCase()}`}>{entry.category}</span><button className="memory-delete-button" type="button" onClick={() => deleteMemoryEntry(entry.index)} aria-label={`Remove memory note: ${entry.text.slice(0, 48)}`} title="Remove note">×</button></div><select className="memory-category-select entry-category-select" aria-label={`Category for memory note: ${entry.text.slice(0, 48)}`} value={entry.category} onChange={(event) => updateMemoryEntry(entry.index, event.target.value as MemoryCategory, entry.text)}>{MEMORY_CATEGORIES.map((category) => <option key={category} value={category}>{category}</option>)}</select><textarea className="memory-entry-text" aria-label={`Edit memory note: ${entry.text.slice(0, 48)}`} value={entry.text} rows={2} maxLength={500} onChange={(event) => updateMemoryEntry(entry.index, entry.category, event.target.value)} /></article>)}
               {parseMemoryEntries(characterSettings.memory).filter((entry) => memoryFilter === "All" || entry.category === memoryFilter).length === 0 && <div className="memory-empty"><span>✳</span><strong>No notes here yet</strong><small>Add one above, or save a chat message with Remember.</small></div>}</div>
             <div className="memory-footer"><span>Shared across chats · saved in this browser</span><span>{parseMemoryEntries(characterSettings.memory).length} notes</span></div></div>
-          <div className="settings-privacy"><span>✳</span><p>These notes are stored in your browser and sent with chat requests so the AI can use them. They are not a secure vault.</p></div>
+          <div className="settings-section"><div className="memory-library-heading"><div><span className="settings-label">EMOTIONAL CONTINUITY JOURNAL</span><p className="settings-help">Keep the thread between conversations: feelings that matter, unfinished conversations, promises, and meaningful moments. You decide what belongs here.</p></div><span className="memory-count">{characterSettings.continuity.length}/12</span></div>
+            <div className="continuity-add-panel"><label className="memory-field-label" htmlFor="continuity-kind">MOMENT TYPE</label><select id="continuity-kind" className="memory-category-select" value={continuityKind} onChange={(event) => setContinuityKind(event.target.value as ContinuityKind)}>{CONTINUITY_KINDS.map((kind) => <option key={kind} value={kind}>{kind}</option>)}</select><label className="memory-field-label" htmlFor="continuity-draft">WHAT SHOULD CARRY FORWARD?</label><textarea id="continuity-draft" className="memory-input continuity-draft" value={continuityDraft} maxLength={220} onChange={(event) => setContinuityDraft(event.target.value)} placeholder="Example: We left off after a difficult conversation about trust. Mira apologized, but we have not fully resolved it." rows={3} /><div className="continuity-footer"><span>{continuityDraft.length}/220 characters</span><button className="memory-add-button" type="button" onClick={addContinuityEntry} disabled={!continuityDraft.trim() || characterSettings.continuity.length >= 12}>＋ Keep this thread</button></div></div>
+            <div className="continuity-entry-list">{characterSettings.continuity.slice().reverse().map((entry) => <article className="continuity-entry" key={entry.id}><div className="memory-entry-top"><span className={"continuity-kind-tag continuity-" + entry.kind.toLowerCase().replace(/\s+/g, "-")}>{entry.kind}</span><button className="memory-delete-button" type="button" onClick={() => deleteContinuityEntry(entry.id)} aria-label={"Remove continuity note: " + entry.text.slice(0, 48)} title="Remove note">×</button></div><p>{entry.text}</p><small>{new Date(entry.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</small></article>)}
+              {characterSettings.continuity.length === 0 && <div className="memory-empty"><span>♡</span><strong>The story is still unfolding</strong><small>Add a meaningful moment, an unfinished thread, or a promise you want Mira to keep in mind.</small></div>}</div>
+            <div className="memory-footer"><span>Shared across chats · saved in this browser</span><span>{characterSettings.continuity.length} journal notes</span></div></div>
+          <div className="settings-privacy"><span>✳</span><p>Memory and continuity notes are stored in this browser and sent with chat requests so the AI can use them. They are editable reference notes, not a secure vault.</p></div>
           <button className="settings-done" type="button" onClick={() => setSettingsOpen(false)}>Save preferences <span>↗</span></button>
         </section>
       </div>}
