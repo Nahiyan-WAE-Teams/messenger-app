@@ -22,33 +22,61 @@ const EMOTIONAL_MOODS: EmotionalMood[] = ["neutral", "warm", "playful", "reflect
 function evolveEmotionalState(state: EmotionalState, message: string, now = Date.now()): EmotionalState {
   const text = message.toLowerCase();
   const next = { ...state };
-  // Time-based recovery is deliberately slow and only applied when a new message arrives.
-  // Tension eases gradually; energy recovers toward a modest baseline. Trust and closeness
-  // do not decay on a timer because relationships shouldn't be reduced to a countdown.
+
+  // Recovery is gradual and only calculated when a new message arrives.
+  // Trust and closeness never decay just because time passes.
   const elapsedHours = Math.max(0, (now - state.updatedAt) / (60 * 60 * 1000));
   if (elapsedHours >= 6) next.tension = Math.max(0, next.tension - Math.floor(elapsedHours / 6));
   if (elapsedHours >= 2) next.energy = Math.min(68, next.energy + Math.floor(elapsedHours / 2));
   if (elapsedHours >= 24 && (next.mood === "hurt" || next.mood === "tired")) next.mood = "reflective";
   if (elapsedHours >= 48 && next.mood === "reflective") next.mood = "neutral";
-  if (/\b(i am sorry|i'm sorry|im sorry|i apologize|my bad|i was wrong)\b/.test(text)) {
-    next.tension -= 7; next.trust += 2; next.mood = "reflective";
-  } else if (/\b(thank you|thanks|i appreciate you|that means a lot|you helped me)\b/.test(text)) {
-    next.tension -= 2; next.trust += 2; next.closeness += 1; next.mood = "warm";
-  } else if (/\b(i like you|i care about you|i missed you|i trust you|love you)\b/.test(text)) {
-    next.closeness += 2; next.trust += 1; next.mood = "warm";
+
+  const seriousHurt = /\b(you lied|you betrayed me|that really hurt|that hurt me|i feel hurt|i'm upset with you|im upset with you|you let me down)\b/.test(text);
+  const repeatedBrokenCommitment = /\b(you promised|you said you would|you said you wouldn't|you said you would not|broke your promise|did it again|doing this again|keep doing this|kept doing this|another broken promise)\b/.test(text);
+  const hostile = /\b(you are useless|you're useless|shut up|i hate you|you're stupid|you are stupid)\b/.test(text);
+  const sincereApology = /\b(i'm sorry|i am sorry|im sorry|i apologize|my bad|i was wrong|i shouldn't have|i should not have|i understand why that hurt|i'll make it right|i will make it right)\b/.test(text);
+  const playfulCue = /\b(lol|lmao|😂|🤣|kidding|just joking|i'm teasing|im teasing|that was funny)\b/.test(text);
+  const seriousDisagreement = /\b(i disagree|i don't agree|i do not agree|i see it differently|that isn't fair|that is not fair|i don't think that's right|i do not think that's right|we disagree)\b/.test(text);
+  const tiredCue = /\b(exhausted|so tired|drained|long day|need some rest)\b/.test(text);
+  const reflectiveCue = /\b(thinking about|i've been wondering|i have been wondering|not sure how i feel)\b/.test(text);
+  const gratitude = /\b(thank you|thanks|i appreciate you|that means a lot|you helped me)\b/.test(text);
+  const affection = /\b(i like you|i care about you|i missed you|i trust you|love you)\b/.test(text);
+
+  // Conflict signals take priority: a joke or apology should not erase real hurt.
+  if (seriousHurt || repeatedBrokenCommitment || hostile) {
+    next.tension += repeatedBrokenCommitment ? 7 : hostile ? 5 : 6;
+    next.trust -= repeatedBrokenCommitment ? 3 : hostile ? 2 : 2;
+    next.mood = "hurt";
+  } else if (sincereApology) {
+    // An apology opens the door to repair, but it does not instantly restore trust.
+    next.tension -= 5;
+    next.trust += 1;
+    next.mood = "reflective";
+  } else if (seriousDisagreement) {
+    // Disagreement can be respectful and is not automatically a relationship injury.
+    next.mood = "reflective";
+    next.tension += 1;
+  } else if (playfulCue) {
+    next.mood = "playful";
+    next.energy += 2;
+    next.tension -= 1;
+  } else if (gratitude) {
+    next.tension -= 2;
+    next.trust += 2;
+    next.closeness += 1;
+    next.mood = "warm";
+  } else if (affection) {
+    next.closeness += 2;
+    next.trust += 1;
+    next.mood = "warm";
+  } else if (reflectiveCue && next.mood === "neutral") {
+    next.mood = "reflective";
   }
-  if (/\b(lol|lmao|😂|🤣|kidding|just joking|that was funny)\b/.test(text)) {
-    next.mood = "playful"; next.energy += 3; next.tension -= 1;
+
+  if (tiredCue) {
+    next.energy -= 5;
+    if (next.mood === "neutral") next.mood = "tired";
   }
-  if (/\b(you lied|you broke your promise|you betrayed me|that hurt|i'm upset with you|im upset with you)\b/.test(text)) {
-    next.tension += 8; next.trust -= 4; next.mood = "hurt";
-  } else if (/\b(you are useless|shut up|i hate you|you're stupid|you are stupid)\b/.test(text)) {
-    next.tension += 5; next.trust -= 2; next.mood = "hurt";
-  }
-  if (/\b(exhausted|so tired|drained|long day|need some rest)\b/.test(text)) {
-    next.energy -= 5; if (next.mood === "neutral") next.mood = "tired";
-  }
-  if (/\b(thinking about|i've been wondering|i have been wondering|not sure how i feel)\b/.test(text) && next.mood === "neutral") next.mood = "reflective";
   next.energy = Math.max(0, Math.min(100, next.energy));
   next.trust = Math.max(0, Math.min(100, next.trust));
   next.closeness = Math.max(0, Math.min(100, next.closeness));
