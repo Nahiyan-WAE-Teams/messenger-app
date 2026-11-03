@@ -166,9 +166,9 @@ export default function Home() {
   }
 
   function updateMemoryEntry(index: number, category: MemoryCategory, text: string) {
-    const lines = characterSettings.memory.split("\\n");
+    const lines = characterSettings.memory.split("\n");
     lines[index] = encodeMemoryEntry(category, text);
-    const combined = lines.filter((line) => line.trim()).join("\\n");
+    const combined = lines.filter((line) => line.trim()).join("\n");
     if (combined.length > 1600) {
       setNotice("That edit would exceed the memory limit. Shorten the note a little.");
       return;
