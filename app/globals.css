@@ -204,3 +204,19 @@ kbd{padding:3px 5px;border:1px solid rgba(80,83,72,.13);border-radius:5px;backgr
 .continuity-promise{background:#f4eee4;color:#9a7858}
 .continuity-milestone{background:#eeebf5;color:#80719c}
 @media(max-width:480px){.continuity-add-panel{padding:11px}.continuity-footer{align-items:flex-start;flex-direction:column}.continuity-footer .memory-add-button{width:100%}}
+
+
+/* Mira's lightweight emotional continuity dashboard */
+.emotional-state-section{padding:15px;border:1px solid rgba(102,124,91,.14);border-radius:16px;background:linear-gradient(145deg,rgba(239,244,233,.64),rgba(255,250,246,.82))}
+.emotional-state-section .memory-library-heading{gap:8px}
+.emotion-mood-row{display:grid;grid-template-columns:1fr 1.2fr;align-items:center;gap:12px;margin:15px 0 17px}
+.emotion-mood-row .memory-field-label{margin:0}
+.emotion-meter{margin:14px 0}
+.emotion-meter-heading{display:flex;justify-content:space-between;align-items:center;gap:10px;color:#5e6857;font-size:11px;font-weight:700}
+.emotion-meter-heading output{color:#8b927f;font-size:10px;font-variant-numeric:tabular-nums}
+.emotion-meter input[type=range]{width:100%;height:5px;margin:11px 0 5px;accent-color:#6d8663;cursor:pointer}
+.emotion-meter small{display:block;color:#96978a;font-size:9px;line-height:1.5}
+.emotion-state-footer{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:17px;padding-top:13px;border-top:1px solid rgba(65,78,59,.1);color:#96978a;font-size:9px}
+.emotion-state-footer button{padding:7px 9px;border:1px solid rgba(80,105,72,.15);border-radius:8px;background:transparent;color:#78836f;font-size:10px}
+.emotion-state-footer button:hover{background:#eef1e9}
+@media(max-width:400px){.emotion-mood-row{grid-template-columns:1fr;gap:7px}.emotional-state-section{padding:12px}.emotion-state-footer{align-items:flex-start;flex-direction:column}}
