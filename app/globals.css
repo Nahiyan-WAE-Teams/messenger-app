@@ -173,3 +173,18 @@ kbd{padding:3px 5px;border:1px solid rgba(80,83,72,.13);border-radius:5px;backgr
 .memory-empty strong{color:#687260;font-size:11px}
 .memory-empty small{font-size:10px;line-height:1.5}
 @media(max-width:480px){.memory-add-panel{padding:11px}.memory-filter-row{align-items:flex-start;flex-direction:column}.memory-filter-select{width:100%}.memory-library-heading .settings-help{font-size:10px}}
+
+
+/* Memory suggestions: explicit opt-in, never automatic saving */
+.memory-suggestion{display:flex;flex-direction:column;gap:10px;margin-top:10px;padding:12px 13px;border:1px solid rgba(104,126,91,.22);border-radius:13px;background:linear-gradient(135deg,rgba(246,248,239,.98),rgba(255,250,245,.96));box-shadow:0 5px 18px rgba(59,76,51,.045)}
+.memory-suggestion-copy{display:flex;align-items:flex-start;gap:9px}
+.memory-suggestion-icon{display:grid;place-items:center;flex:0 0 25px;width:25px;height:25px;border-radius:8px;background:#e8eee1;color:#61775a;font-size:14px}
+.memory-suggestion-copy>span:last-child{display:flex;flex-direction:column;gap:3px}
+.memory-suggestion-copy strong{color:#4d6048;font-size:11px;font-weight:750}
+.memory-suggestion-copy small{color:#818778;font-size:10px;line-height:1.5}
+.memory-suggestion-actions{display:flex;align-items:center;gap:8px}
+.memory-suggestion-actions button{min-height:31px;padding:7px 11px;border:1px solid rgba(80,105,72,.14);border-radius:8px;background:#5b7254;color:#fff;font-size:10px;font-weight:700;transition:transform .18s,background .18s}
+.memory-suggestion-actions button:hover{transform:translateY(-1px);background:#465d42}
+.memory-suggestion-actions .memory-suggestion-dismiss{background:transparent;color:#7b8174;border-color:rgba(80,105,72,.12)}
+.memory-suggestion-actions .memory-suggestion-dismiss:hover{background:#f1f2ec;color:#4f5c49}
+.memory-suggestion-status{display:inline-block;margin-top:7px;color:#89917f;font-size:10px}
