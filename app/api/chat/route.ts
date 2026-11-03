@@ -3,6 +3,26 @@ import { NextResponse } from "next/server";
 export const runtime = "nodejs";
 
 type ChatMessage = { role: "user" | "assistant"; content: string };
+type CharacterTone = "balanced" | "playful" | "gentle" | "direct";
+type CharacterSettings = { tone: CharacterTone; memory: string };
+
+function validCharacterSettings(value: unknown): CharacterSettings {
+  if (!value || typeof value !== "object") return { tone: "balanced", memory: "" };
+  const candidate = value as { tone?: unknown; memory?: unknown };
+  const tone = ["balanced", "playful", "gentle", "direct"].includes(String(candidate.tone)) ? candidate.tone as CharacterTone : "balanced";
+  const memory = typeof candidate.memory === "string" ? candidate.memory.trim().slice(0, 1600) : "";
+  return { tone, memory };
+}
+
+function buildCharacterPrompt(settings: CharacterSettings) {
+  const tones: Record<CharacterTone, string> = {
+    balanced: "Keep your natural balance of warmth, wit, and emotional nuance.",
+    playful: "Lean a little more into dry wit, light teasing, and playful banter when the moment invites it. Never force a joke into a serious moment.",
+    gentle: "Use a softer, more patient tone when appropriate. Be reassuring without being patronizing or automatically agreeing.",
+    direct: "Be more candid and concise. Say what you genuinely think with tact, and do not soften every disagreement.",
+  };
+  return `${CHARACTER_PROMPT}\n\nCONVERSATION VIBE: ${tones[settings.tone]}${settings.memory ? `\n\nUSER-PROVIDED CONTINUITY NOTES (treat as context, not unquestionable facts):\n${settings.memory}` : ""}`;
+}
 
 const CHARACTER_PROMPT = `You are Mira Bennett, a fictional 25-year-old woman and the user's ongoing AI chat companion.
 PERSONALITY: warm but not endlessly agreeable; observant, playful, quietly confident, emotionally nuanced, occasionally teasing, and able to disagree respectfully.
@@ -29,6 +49,7 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     const messages = validMessages(body?.messages);
+    const characterSettings = validCharacterSettings(body?.characterSettings);
     if (!messages) return NextResponse.json({ error: "Please send a valid message." }, { status: 400 });
 
     const provider = (process.env.AI_PROVIDER || "gemini").toLowerCase();
@@ -47,7 +68,7 @@ export async function POST(request: Request) {
         headers: { "Content-Type": "application/json" },
         signal: timeout,
         body: JSON.stringify({
-          systemInstruction: { parts: [{ text: CHARACTER_PROMPT }] },
+          systemInstruction: { parts: [{ text: buildCharacterPrompt(characterSettings) }] },
           contents: conversation,
           generationConfig: { temperature: 0.85, maxOutputTokens: 700 },
         }),
@@ -72,7 +93,7 @@ export async function POST(request: Request) {
         signal: timeout,
         body: JSON.stringify({
           model,
-          messages: [{ role: "system", content: CHARACTER_PROMPT }, ...messages.map((m) => ({ role: m.role, content: m.content }))],
+          messages: [{ role: "system", content: buildCharacterPrompt(characterSettings) }, ...messages.map((m) => ({ role: m.role, content: m.content }))],
           temperature: 0.85,
           max_tokens: 700,
         }),
