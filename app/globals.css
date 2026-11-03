@@ -129,3 +129,6 @@ kbd{padding:3px 5px;border:1px solid rgba(80,83,72,.13);border-radius:5px;backgr
 .conversation-delete:disabled,.chat-link:disabled,.new-chat:disabled{cursor:wait;opacity:.6}
 @media(max-width:900px){.conversation-list{max-height:24vh}}
 @media(max-width:680px){.conversation-list{max-height:none}}
+
+.new-chat-mobile{display:none;font-size:18px}
+@media(max-width:680px){.new-chat-mobile{display:grid}}
