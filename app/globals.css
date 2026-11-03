@@ -188,3 +188,19 @@ kbd{padding:3px 5px;border:1px solid rgba(80,83,72,.13);border-radius:5px;backgr
 .memory-suggestion-actions .memory-suggestion-dismiss{background:transparent;color:#7b8174;border-color:rgba(80,105,72,.12)}
 .memory-suggestion-actions .memory-suggestion-dismiss:hover{background:#f1f2ec;color:#4f5c49}
 .memory-suggestion-status{display:inline-block;margin-top:7px;color:#89917f;font-size:10px}
+
+
+/* Emotional continuity journal */
+.continuity-add-panel{display:flex;flex-direction:column;gap:9px;padding:13px;border:1px solid rgba(111,130,100,.15);border-radius:14px;background:linear-gradient(145deg,rgba(241,245,235,.78),rgba(255,250,246,.82))}
+.continuity-draft{min-height:86px}
+.continuity-footer{display:flex;align-items:center;justify-content:space-between;gap:10px;color:#96978a;font-size:9px}
+.continuity-footer .memory-add-button{flex-shrink:0}
+.continuity-entry-list{display:flex;flex-direction:column;gap:9px;margin-top:12px}
+.continuity-entry{padding:12px 13px;border:1px solid rgba(65,78,59,.11);border-radius:13px;background:rgba(255,255,252,.82)}
+.continuity-entry p{margin:9px 0 7px;color:#55594f;font-size:11px;line-height:1.7;overflow-wrap:anywhere}
+.continuity-entry>small{color:#a0a092;font-size:9px}
+.continuity-kind-tag{display:inline-flex;align-items:center;min-height:21px;padding:4px 7px;border-radius:6px;background:#e9eee4;color:#62735a;font-size:8px;font-weight:800;letter-spacing:.3px}
+.continuity-unresolved{background:#f7e9e4;color:#a16f60}
+.continuity-promise{background:#f4eee4;color:#9a7858}
+.continuity-milestone{background:#eeebf5;color:#80719c}
+@media(max-width:480px){.continuity-add-panel{padding:11px}.continuity-footer{align-items:flex-start;flex-direction:column}.continuity-footer .memory-add-button{width:100%}}
