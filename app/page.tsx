@@ -12,6 +12,22 @@ type CharacterSettings = { tone: CharacterTone; memory: string };
 const DEFAULT_SETTINGS: CharacterSettings = { tone: "balanced", memory: "" };
 const starter: Message[] = [{ id: "welcome", role: "assistant", content: "Hey, you made it. 😊 I’m Mira. We can take this one conversation at a time. What’s on your mind?", time: Date.now() }];
 
+const MEMORY_CATEGORIES = ["Preferences", "Stories", "People", "Milestones", "General"] as const;
+type MemoryCategory = (typeof MEMORY_CATEGORIES)[number];
+type MemoryEntry = { category: MemoryCategory; text: string; index: number };
+
+function parseMemoryEntries(memory: string): MemoryEntry[] {
+  return memory.split("\n").map((line, index) => {
+    const match = line.match(/^\[(Preferences|Stories|People|Milestones|General)\]\s*(.*)$/i);
+    const category = match ? MEMORY_CATEGORIES.find((item) => item.toLowerCase() === match[1].toLowerCase()) || "General" : "General";
+    return { category, text: (match ? match[2] : line).trim(), index };
+  }).filter((entry) => entry.text.length > 0);
+}
+
+function encodeMemoryEntry(category: MemoryCategory, text: string) {
+  return `[${category}] ${text.trim().replace(/\s+/g, " ")}`;
+}
+
 function timeLabel(timestamp: number) {
   return new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(timestamp);
 }
@@ -27,6 +43,9 @@ export default function Home() {
   const [notice, setNotice] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [characterSettings, setCharacterSettings] = useState<CharacterSettings>(DEFAULT_SETTINGS);
+  const [memoryDraft, setMemoryDraft] = useState("");
+  const [memoryCategory, setMemoryCategory] = useState<MemoryCategory>("Preferences");
+  const [memoryFilter, setMemoryFilter] = useState("All");
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -112,7 +131,7 @@ export default function Home() {
 
   function rememberMessage(message: Message) {
     const label = message.role === "user" ? "You" : "Mira";
-    const entry = `• ${label}: ${message.content.trim()}`;
+    const entry = encodeMemoryEntry("General", `• ${label}: ${message.content.trim().replace(/\s+/g, " ")}`);
     const existing = characterSettings.memory.split("\n").map((line) => line.trim()).filter(Boolean);
     if (existing.includes(entry)) {
       setNotice("That message is already in Mira’s shared memory notes.");
@@ -125,6 +144,38 @@ export default function Home() {
     }
     setCharacterSettings((current) => ({ ...current, memory: [current.memory.trim(), entry].filter(Boolean).join("\n") }));
     setNotice("Saved to Mira’s shared memory notes. You can review or edit it in character settings.");
+  }
+
+  function addMemoryEntry() {
+    const text = memoryDraft.trim().replace(/\s+/g, " ");
+    if (!text) return;
+    const entry = encodeMemoryEntry(memoryCategory, text);
+    const existing = characterSettings.memory.split("\n").map((line) => line.trim()).filter(Boolean);
+    if (existing.includes(entry)) {
+      setNotice("That note is already in Mira’s memory.");
+      return;
+    }
+    const combined = [characterSettings.memory.trim(), entry].filter(Boolean).join("\n");
+    if (combined.length > 1600) {
+      setNotice("Mira’s memory is full. Remove or shorten a note before adding another.");
+      return;
+    }
+    setCharacterSettings((current) => ({ ...current, memory: [current.memory.trim(), entry].filter(Boolean).join("\n") }));
+    setMemoryDraft("");
+    setNotice("Added to Mira’s shared memory.");
+  }
+
+  function updateMemoryEntry(index: number, category: MemoryCategory, text: string) {
+    const lines = characterSettings.memory.split("\n");
+    lines[index] = text.trim() ? encodeMemoryEntry(category, text) : "";
+    setCharacterSettings((current) => ({ ...current, memory: lines.filter((line) => line.trim()).join("\n").slice(0, 1600) }));
+  }
+
+  function deleteMemoryEntry(index: number) {
+    const lines = characterSettings.memory.split("\n");
+    lines.splice(index, 1);
+    setCharacterSettings((current) => ({ ...current, memory: lines.filter((line) => line.trim()).join("\n") }));
+    setNotice("Removed that note from Mira’s memory.");
   }
 
   function createConversation() {
@@ -223,7 +274,12 @@ export default function Home() {
           <div className="settings-section"><span className="settings-label">CONVERSATION VIBE</span><div className="tone-options">
             {([{ id: "balanced", title: "Balanced", detail: "Natural and nuanced" }, { id: "playful", title: "Playful", detail: "More wit and teasing" }, { id: "gentle", title: "Gentle", detail: "Softer and reassuring" }, { id: "direct", title: "Direct", detail: "Clear and candid" }] as const).map((tone) => <button key={tone.id} type="button" className={characterSettings.tone === tone.id ? "tone-option selected" : "tone-option"} aria-pressed={characterSettings.tone === tone.id} onClick={() => setCharacterSettings((current) => ({ ...current, tone: tone.id }))}><span className="tone-check">{characterSettings.tone === tone.id ? "✓" : ""}</span><strong>{tone.title}</strong><small>{tone.detail}</small></button>)}
           </div></div>
-          <div className="settings-section"><label className="settings-label" htmlFor="memory-notes">MIRA’S MEMORY NOTES</label><p className="settings-help">Shared across every conversation. Add stable details, preferences, or story context, or use Remember beneath a message to save it here. Keep it brief and avoid secrets.</p><textarea id="memory-notes" className="memory-input" value={characterSettings.memory} maxLength={1600} onChange={(event) => setCharacterSettings((current) => ({ ...current, memory: event.target.value }))} placeholder={"Example: I prefer honest advice over automatic agreement. We’re slowly developing a cozy, teasing friendship."} /><div className="memory-footer"><span>Shared across chats · saved in this browser</span><span>{characterSettings.memory.length}/1600</span></div></div>
+          <div className="settings-section"><div className="memory-library-heading"><div><span className="settings-label">MIRA’S MEMORY LIBRARY</span><p className="settings-help">Organize the details that should carry between chats. You can edit, recategorize, or remove any note.</p></div><span className="memory-count">{characterSettings.memory.length}/1600</span></div>
+            <div className="memory-add-panel"><label className="memory-field-label" htmlFor="memory-category">CATEGORY</label><select id="memory-category" className="memory-category-select" value={memoryCategory} onChange={(event) => setMemoryCategory(event.target.value as MemoryCategory)}>{MEMORY_CATEGORIES.map((category) => <option key={category} value={category}>{category}</option>)}</select><label className="memory-field-label" htmlFor="memory-draft">NEW NOTE</label><textarea id="memory-draft" className="memory-input memory-draft" value={memoryDraft} maxLength={500} onChange={(event) => setMemoryDraft(event.target.value)} placeholder="A preference, ongoing story detail, important person, or milestone..." rows={2} /><button className="memory-add-button" type="button" onClick={addMemoryEntry} disabled={!memoryDraft.trim() || characterSettings.memory.length >= 1600}>＋ Add to memory</button></div>
+            <div className="memory-filter-row"><label className="memory-field-label" htmlFor="memory-filter">SAVED NOTES</label><select id="memory-filter" className="memory-category-select memory-filter-select" value={memoryFilter} onChange={(event) => setMemoryFilter(event.target.value)}><option value="All">All categories</option>{MEMORY_CATEGORIES.map((category) => <option key={category} value={category}>{category}</option>)}</select></div>
+            <div className="memory-entry-list">{parseMemoryEntries(characterSettings.memory).filter((entry) => memoryFilter === "All" || entry.category === memoryFilter).map((entry) => <article className="memory-entry" key={entry.index}><div className="memory-entry-top"><span className={`memory-category-tag category-${entry.category.toLowerCase()}`}>{entry.category}</span><button className="memory-delete-button" type="button" onClick={() => deleteMemoryEntry(entry.index)} aria-label={`Remove memory note: ${entry.text.slice(0, 48)}`} title="Remove note">×</button></div><select className="memory-category-select entry-category-select" aria-label={`Category for memory note: ${entry.text.slice(0, 48)}`} value={entry.category} onChange={(event) => updateMemoryEntry(entry.index, event.target.value as MemoryCategory, entry.text)}>{MEMORY_CATEGORIES.map((category) => <option key={category} value={category}>{category}</option>)}</select><textarea className="memory-entry-text" aria-label={`Edit memory note: ${entry.text.slice(0, 48)}`} value={entry.text} rows={2} maxLength={500} onChange={(event) => updateMemoryEntry(entry.index, entry.category, event.target.value)} /></article>)}
+              {parseMemoryEntries(characterSettings.memory).filter((entry) => memoryFilter === "All" || entry.category === memoryFilter).length === 0 && <div className="memory-empty"><span>✳</span><strong>No notes here yet</strong><small>Add one above, or save a chat message with Remember.</small></div>}</div>
+            <div className="memory-footer"><span>Shared across chats · saved in this browser</span><span>{parseMemoryEntries(characterSettings.memory).length} notes</span></div></div>
           <div className="settings-privacy"><span>✳</span><p>These notes are stored in your browser and sent with chat requests so the AI can use them. They are not a secure vault.</p></div>
           <button className="settings-done" type="button" onClick={() => setSettingsOpen(false)}>Save preferences <span>↗</span></button>
         </section>
