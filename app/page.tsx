@@ -11,9 +11,43 @@ const SETTINGS_KEY = "mira-messenger-settings-v1";
 type CharacterTone = "balanced" | "playful" | "gentle" | "direct";
 type ContinuityKind = "Emotional context" | "Unresolved" | "Promise" | "Milestone";
 type ContinuityEntry = { id: string; kind: ContinuityKind; text: string; createdAt: number };
-type CharacterSettings = { tone: CharacterTone; memory: string; continuity: ContinuityEntry[] };
-const DEFAULT_SETTINGS: CharacterSettings = { tone: "balanced", memory: "", continuity: [] };
+type EmotionalMood = "neutral" | "warm" | "playful" | "reflective" | "hurt" | "tired";
+type EmotionalState = { mood: EmotionalMood; energy: number; trust: number; closeness: number; tension: number; updatedAt: number };
+type CharacterSettings = { tone: CharacterTone; memory: string; continuity: ContinuityEntry[]; emotionalState: EmotionalState };
+const DEFAULT_EMOTIONAL_STATE: EmotionalState = { mood: "neutral", energy: 68, trust: 50, closeness: 25, tension: 10, updatedAt: Date.now() };
+const DEFAULT_SETTINGS: CharacterSettings = { tone: "balanced", memory: "", continuity: [], emotionalState: DEFAULT_EMOTIONAL_STATE };
 const CONTINUITY_KINDS: ContinuityKind[] = ["Emotional context", "Unresolved", "Promise", "Milestone"];
+const EMOTIONAL_MOODS: EmotionalMood[] = ["neutral", "warm", "playful", "reflective", "hurt", "tired"];
+
+function evolveEmotionalState(state: EmotionalState, message: string): EmotionalState {
+  const text = message.toLowerCase();
+  const next = { ...state };
+  if (/\b(i am sorry|i'm sorry|im sorry|i apologize|my bad|i was wrong)\b/.test(text)) {
+    next.tension -= 7; next.trust += 2; next.mood = "reflective";
+  } else if (/\b(thank you|thanks|i appreciate you|that means a lot|you helped me)\b/.test(text)) {
+    next.tension -= 2; next.trust += 2; next.closeness += 1; next.mood = "warm";
+  } else if (/\b(i like you|i care about you|i missed you|i trust you|love you)\b/.test(text)) {
+    next.closeness += 2; next.trust += 1; next.mood = "warm";
+  }
+  if (/\b(lol|lmao|😂|🤣|kidding|just joking|that was funny)\b/.test(text)) {
+    next.mood = "playful"; next.energy += 3; next.tension -= 1;
+  }
+  if (/\b(you lied|you broke your promise|you betrayed me|that hurt|i'm upset with you|im upset with you)\b/.test(text)) {
+    next.tension += 8; next.trust -= 4; next.mood = "hurt";
+  } else if (/\b(you are useless|shut up|i hate you|you're stupid|you are stupid)\b/.test(text)) {
+    next.tension += 5; next.trust -= 2; next.mood = "hurt";
+  }
+  if (/\b(exhausted|so tired|drained|long day|need some rest)\b/.test(text)) {
+    next.energy -= 5; if (next.mood === "neutral") next.mood = "tired";
+  }
+  if (/\b(thinking about|i've been wondering|i have been wondering|not sure how i feel)\b/.test(text) && next.mood === "neutral") next.mood = "reflective";
+  next.energy = Math.max(0, Math.min(100, next.energy));
+  next.trust = Math.max(0, Math.min(100, next.trust));
+  next.closeness = Math.max(0, Math.min(100, next.closeness));
+  next.tension = Math.max(0, Math.min(100, next.tension));
+  next.updatedAt = Date.now();
+  return next;
+}
 const starter: Message[] = [{ id: "welcome", role: "assistant", content: "Hey, you made it. 😊 I’m Mira. We can take this one conversation at a time. What’s on your mind?", time: Date.now() }];
 
 const MEMORY_CATEGORIES = ["Preferences", "Stories", "People", "Milestones", "General"] as const;
@@ -83,7 +117,16 @@ export default function Home() {
             .filter((item: unknown) => item && typeof item === "object" && typeof (item as ContinuityEntry).id === "string" &&
               CONTINUITY_KINDS.includes((item as ContinuityEntry).kind) && typeof (item as ContinuityEntry).text === "string")
             .slice(-12).map((item: ContinuityEntry) => ({ ...item, text: item.text.trim().slice(0, 220) })).filter((item: ContinuityEntry) => item.text.length > 0) : [];
-          setCharacterSettings({ tone: parsedSettings.tone, memory: parsedSettings.memory.slice(0, 1600), continuity: savedContinuity });
+          const savedState = parsedSettings.emotionalState && typeof parsedSettings.emotionalState === "object" ? parsedSettings.emotionalState : DEFAULT_EMOTIONAL_STATE;
+          const safeState: EmotionalState = {
+            mood: EMOTIONAL_MOODS.includes(savedState.mood) ? savedState.mood : "neutral",
+            energy: Number.isFinite(savedState.energy) ? Math.max(0, Math.min(100, savedState.energy)) : 68,
+            trust: Number.isFinite(savedState.trust) ? Math.max(0, Math.min(100, savedState.trust)) : 50,
+            closeness: Number.isFinite(savedState.closeness) ? Math.max(0, Math.min(100, savedState.closeness)) : 25,
+            tension: Number.isFinite(savedState.tension) ? Math.max(0, Math.min(100, savedState.tension)) : 10,
+            updatedAt: Number.isFinite(savedState.updatedAt) ? savedState.updatedAt : Date.now(),
+          };
+          setCharacterSettings({ tone: parsedSettings.tone, memory: parsedSettings.memory.slice(0, 1600), continuity: savedContinuity, emotionalState: safeState });
         }
       }
       const savedConversations = localStorage.getItem(CONVERSATIONS_KEY);
@@ -134,6 +177,9 @@ export default function Home() {
     const content = input.trim();
     if (!content || busy || !activeConversation) return;
     const conversationId = activeConversation.id;
+    const nextEmotionalState = evolveEmotionalState(characterSettings.emotionalState, content);
+    const requestSettings = { ...characterSettings, emotionalState: nextEmotionalState };
+    setCharacterSettings(requestSettings);
     const userMessage: Message = { id: crypto.randomUUID(), role: "user", content, time: Date.now(), memorySuggestion: suggestMemoryFromMessage(content) };
     const next = [...activeConversation.messages, userMessage].slice(-200);
     const title = activeConversation.messages.some((message) => message.role === "user")
@@ -145,7 +191,7 @@ export default function Home() {
     try {
       const response = await fetch("/api/chat", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: next.filter((m) => m.id !== "welcome").map(({ role, content }) => ({ role, content })).slice(-30), characterSettings }),
+        body: JSON.stringify({ messages: next.filter((m) => m.id !== "welcome").map(({ role, content }) => ({ role, content })).slice(-30), characterSettings: requestSettings }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data?.error || "Something went wrong.");
@@ -359,6 +405,10 @@ export default function Home() {
           <div className="settings-section"><span className="settings-label">CONVERSATION VIBE</span><div className="tone-options">
             {([{ id: "balanced", title: "Balanced", detail: "Natural and nuanced" }, { id: "playful", title: "Playful", detail: "More wit and teasing" }, { id: "gentle", title: "Gentle", detail: "Softer and reassuring" }, { id: "direct", title: "Direct", detail: "Clear and candid" }] as const).map((tone) => <button key={tone.id} type="button" className={characterSettings.tone === tone.id ? "tone-option selected" : "tone-option"} aria-pressed={characterSettings.tone === tone.id} onClick={() => setCharacterSettings((current) => ({ ...current, tone: tone.id }))}><span className="tone-check">{characterSettings.tone === tone.id ? "✓" : ""}</span><strong>{tone.title}</strong><small>{tone.detail}</small></button>)}
           </div></div>
+          <div className="settings-section emotional-state-section"><div className="memory-library-heading"><div><span className="settings-label">MIRA’S EMOTIONAL STATE</span><p className="settings-help">A lightweight continuity model, not a claim that feelings can be measured exactly. Values change gently from text cues and can be edited or reset by you.</p></div><span className="memory-count">{characterSettings.emotionalState.mood}</span></div>
+            <div className="emotion-mood-row"><label className="memory-field-label" htmlFor="emotion-mood">CURRENT TONE</label><select id="emotion-mood" className="memory-category-select" value={characterSettings.emotionalState.mood} onChange={(event) => setCharacterSettings((current) => ({ ...current, emotionalState: { ...current.emotionalState, mood: event.target.value as EmotionalMood, updatedAt: Date.now() } }))}>{EMOTIONAL_MOODS.map((mood) => <option key={mood} value={mood}>{mood.charAt(0).toUpperCase() + mood.slice(1)}</option>)}</select></div>
+            {([{ key: "energy", label: "Energy", hint: "How lively or worn down she feels" }, { key: "trust", label: "Trust", hint: "Earned through consistent interaction" }, { key: "closeness", label: "Closeness", hint: "Familiarity, not automatic romance" }, { key: "tension", label: "Lingering tension", hint: "Unresolved friction that may ease over time" }] as const).map((item) => <div className="emotion-meter" key={item.key}><div className="emotion-meter-heading"><label htmlFor={"emotion-" + item.key}>{item.label}</label><output>{characterSettings.emotionalState[item.key]}/100</output></div><input id={"emotion-" + item.key} type="range" min="0" max="100" value={characterSettings.emotionalState[item.key]} onChange={(event) => setCharacterSettings((current) => ({ ...current, emotionalState: { ...current.emotionalState, [item.key]: Number(event.target.value), updatedAt: Date.now() } }))} /><small>{item.hint}</small></div>)}
+            <div className="emotion-state-footer"><span>Saved in this browser · no extra AI calls</span><button type="button" className="memory-suggestion-dismiss" onClick={() => setCharacterSettings((current) => ({ ...current, emotionalState: { ...DEFAULT_EMOTIONAL_STATE, updatedAt: Date.now() } }))}>Reset state</button></div></div>
           <div className="settings-section"><div className="memory-library-heading"><div><span className="settings-label">MIRA’S MEMORY LIBRARY</span><p className="settings-help">Organize the details that should carry between chats. You can edit, recategorize, or remove any note.</p></div><span className="memory-count">{characterSettings.memory.length}/1600</span></div>
             <div className="memory-add-panel"><label className="memory-field-label" htmlFor="memory-category">CATEGORY</label><select id="memory-category" className="memory-category-select" value={memoryCategory} onChange={(event) => setMemoryCategory(event.target.value as MemoryCategory)}>{MEMORY_CATEGORIES.map((category) => <option key={category} value={category}>{category}</option>)}</select><label className="memory-field-label" htmlFor="memory-draft">NEW NOTE</label><textarea id="memory-draft" className="memory-input memory-draft" value={memoryDraft} maxLength={500} onChange={(event) => setMemoryDraft(event.target.value)} placeholder="A preference, ongoing story detail, important person, or milestone..." rows={2} /><button className="memory-add-button" type="button" onClick={addMemoryEntry} disabled={!memoryDraft.trim() || characterSettings.memory.length >= 1600}>＋ Add to memory</button></div>
             <div className="memory-filter-row"><label className="memory-field-label" htmlFor="memory-filter">SAVED NOTES</label><select id="memory-filter" className="memory-category-select memory-filter-select" value={memoryFilter} onChange={(event) => setMemoryFilter(event.target.value)}><option value="All">All categories</option>{MEMORY_CATEGORIES.map((category) => <option key={category} value={category}>{category}</option>)}</select></div>
