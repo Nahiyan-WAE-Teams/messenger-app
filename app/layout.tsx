@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Mira | Private AI Messenger",
+  title: "Mira | Offline Messenger",
   description: "A personal AI character messenger experiment.",
   applicationName: "Mira Messenger",
 };
