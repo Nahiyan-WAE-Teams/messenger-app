@@ -15,7 +15,7 @@ The starter collection contains fictional characters only. Real-person profiles 
 
 - Premium responsive discovery interface with swipe gestures and Like / Pass actions
 - Profile cards, locally stored profile photos, bios, age, location, interests and relationship intentions
-- Local compatibility scoring and configurable discovery filters
+- Hidden, preference-aware discovery ranking with diversity balancing and configurable filters
 - Likes, mutual-match simulation based on explicit local profile data, and match collection
 - Messages and conversation history
 - Rule-based dialogue for fictional profiles only; real-person conversations are private notes
@@ -26,11 +26,11 @@ The starter collection contains fictional characters only. Real-person profiles 
 
 ## How the data engine works
 
-All profile data is stored in the app's local WebView storage. Discovery filters profiles by age, relationship intention, activity, and local interaction history. Compatibility is a transparent local score based on shared interests and selected preferences.
+All profile data is stored in the app's local WebView storage. Discovery filters profiles by age, relationship intention, activity, and local interaction history. Discovery uses private local ranking signals based on shared interests, values, lifestyle, personality and selected preferences. No compatibility percentage or score is displayed.
 
 A Like creates a match only when the local fictional profile data explicitly marks interest as mutual. This is a simulation for the offline experience, not a real-world match notification.
 
-Fictional character conversations use written trigger/reply rules. The reply engine never calls an AI model and does not invent replies when a rule is missing. Real-person records cannot send or receive messages; their chat area is a private note-taking interface.
+Fictional character conversations use written trigger/reply rules, relationship-stage rules, optional previous-message context conditions, and recent-reply avoidance. For example, `[after:work] fine | Was work busy today?` only applies when the user's previous message mentioned work. The reply engine never calls an AI model and does not invent replies when a rule is missing. Real-person records cannot send or receive messages; their chat area is a private note-taking interface.
 
 ## Standalone Android app
 
