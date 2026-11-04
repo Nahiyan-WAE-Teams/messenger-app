@@ -403,7 +403,7 @@ body {
   border-color: rgba(137,122,230,.48);
   box-shadow: 0 0 0 4px rgba(137,122,230,.09), 0 12px 30px rgba(52,65,92,.08);
 }
-.composer textarea { color: #3d4a5e; font: 400 14px/1.55 inherit; }
+.composer textarea { color: #3d4a5e; font-family: inherit; font-size: 14px; line-height: 1.55; }
 .composer textarea::placeholder { color: #a8afbb; }
 .composer-plus {
   border: 1px solid rgba(137,126,220,.15);
