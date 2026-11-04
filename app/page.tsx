@@ -1,483 +1,146 @@
 "use client";
 
-import { FormEvent, useEffect, useRef, useState } from "react";
-import { chooseLocalReply } from "../lib/reply-engine.js";
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import { applyProfileAction, chooseProfileReply, getCompatibilityScore, getDiscoverProfiles } from "../lib/dating-engine.js";
 
-type MemorySuggestion = { category: MemoryCategory; text: string; status: "pending" | "saved" | "dismissed" };
-type Message = { id: string; role: "user" | "assistant"; content: string; time: number; memorySuggestion?: MemorySuggestion };
-type Conversation = { id: string; title: string; updatedAt: number; messages: Message[] };
-const STORAGE_KEY = "mira-messenger-history-v1";
-const CONVERSATIONS_KEY = "mira-messenger-conversations-v1";
-const SETTINGS_KEY = "mira-messenger-settings-v1";
-type CharacterTone = "balanced" | "playful" | "gentle" | "direct";
-type ContinuityKind = "Emotional context" | "Unresolved" | "Promise" | "Milestone";
-type ContinuityEntry = { id: string; kind: ContinuityKind; text: string; createdAt: number };
-type EmotionalMood = "neutral" | "warm" | "playful" | "reflective" | "hurt" | "tired";
-type EmotionalState = { mood: EmotionalMood; energy: number; trust: number; closeness: number; tension: number; updatedAt: number };
-type ReplyRule = { id: string; triggers: string[]; replies: string[]; enabled: boolean };
-type CharacterSettings = { tone: CharacterTone; memory: string; continuity: ContinuityEntry[]; emotionalState: EmotionalState; replyRules: ReplyRule[]; fallbackReply: string };
-const DEFAULT_EMOTIONAL_STATE: EmotionalState = { mood: "neutral", energy: 68, trust: 50, closeness: 25, tension: 10, updatedAt: Date.now() };
-const DEFAULT_RULES: ReplyRule[] = [{ id: "hello", triggers: ["hello", "hi", "hey"], replies: ["Hey. There you are 😊", "Hi you. How’s your day going?"], enabled: true }, { id: "morning", triggers: ["good morning", "morning"], replies: ["Morning ☀️ Did you sleep okay?"], enabled: true }, { id: "night", triggers: ["good night", "gn"], replies: ["Good night. Get some proper rest, okay? 🌙"], enabled: true }, { id: "miss", triggers: ["i miss you", "missed you"], replies: ["You were gone for a bit. I’m glad you’re here now. 💗"], enabled: true }];
-const DEFAULT_FALLBACK = "I don’t have a written reply for that yet. Add one in my Reply Library. 💗";
-const DEFAULT_SETTINGS: CharacterSettings = { tone: "balanced", memory: "", continuity: [], emotionalState: DEFAULT_EMOTIONAL_STATE, replyRules: DEFAULT_RULES, fallbackReply: DEFAULT_FALLBACK };
-const CONTINUITY_KINDS: ContinuityKind[] = ["Emotional context", "Unresolved", "Promise", "Milestone"];
-const EMOTIONAL_MOODS: EmotionalMood[] = ["neutral", "warm", "playful", "reflective", "hurt", "tired"];
-
-function evolveEmotionalState(state: EmotionalState, message: string, now = Date.now()): EmotionalState {
-  const text = message.toLowerCase();
-  const next = { ...state };
-
-  // Recovery is gradual and only calculated when a new message arrives.
-  // Trust and closeness never decay just because time passes.
-  const elapsedHours = Math.max(0, (now - state.updatedAt) / (60 * 60 * 1000));
-  if (elapsedHours >= 6) next.tension = Math.max(0, next.tension - Math.floor(elapsedHours / 6));
-  if (elapsedHours >= 2) next.energy = Math.min(68, next.energy + Math.floor(elapsedHours / 2));
-  if (elapsedHours >= 24 && (next.mood === "hurt" || next.mood === "tired")) next.mood = "reflective";
-  if (elapsedHours >= 48 && next.mood === "reflective") next.mood = "neutral";
-
-  const seriousHurt = /\b(you lied|you betrayed me|that really hurt|that hurt me|i feel hurt|i'm upset with you|im upset with you|you let me down)\b/.test(text);
-  const repeatedBrokenCommitment = /\b(you promised|you said you would|you said you wouldn't|you said you would not|broke your promise|did it again|doing this again|keep doing this|kept doing this|another broken promise)\b/.test(text);
-  const hostile = /\b(you are useless|you're useless|shut up|i hate you|you're stupid|you are stupid)\b/.test(text);
-  const sincereApology = /\b(i'm sorry|i am sorry|im sorry|i apologize|my bad|i was wrong|i shouldn't have|i should not have|i understand why that hurt|i'll make it right|i will make it right)\b/.test(text);
-  const playfulCue = /\b(lol|lmao|😂|🤣|kidding|just joking|i'm teasing|im teasing|that was funny)\b/.test(text);
-  const seriousDisagreement = /\b(i disagree|i don't agree|i do not agree|i see it differently|that isn't fair|that is not fair|i don't think that's right|i do not think that's right|we disagree)\b/.test(text);
-  const tiredCue = /\b(exhausted|so tired|drained|long day|need some rest)\b/.test(text);
-  const reflectiveCue = /\b(thinking about|i've been wondering|i have been wondering|not sure how i feel)\b/.test(text);
-  const gratitude = /\b(thank you|thanks|i appreciate you|that means a lot|you helped me)\b/.test(text);
-  const affection = /\b(i like you|i care about you|i missed you|i trust you|love you)\b/.test(text);
-
-  // Conflict signals take priority: a joke or apology should not erase real hurt.
-  if (seriousHurt || repeatedBrokenCommitment || hostile) {
-    next.tension += repeatedBrokenCommitment ? 7 : hostile ? 5 : 6;
-    next.trust -= repeatedBrokenCommitment ? 3 : hostile ? 2 : 2;
-    next.mood = "hurt";
-  } else if (sincereApology) {
-    // An apology opens the door to repair, but it does not instantly restore trust.
-    next.tension -= 5;
-    next.trust += 1;
-    next.mood = "reflective";
-  } else if (seriousDisagreement) {
-    // Disagreement can be respectful and is not automatically a relationship injury.
-    next.mood = "reflective";
-    next.tension += 1;
-  } else if (playfulCue) {
-    next.mood = "playful";
-    next.energy += 2;
-    next.tension -= 1;
-  } else if (gratitude) {
-    next.tension -= 2;
-    next.trust += 2;
-    next.closeness += 1;
-    next.mood = "warm";
-  } else if (affection) {
-    next.closeness += 2;
-    next.trust += 1;
-    next.mood = "warm";
-  } else if (reflectiveCue && next.mood === "neutral") {
-    next.mood = "reflective";
-  }
-
-  if (tiredCue) {
-    next.energy -= 5;
-    if (next.mood === "neutral") next.mood = "tired";
-  }
-  next.energy = Math.max(0, Math.min(100, next.energy));
-  next.trust = Math.max(0, Math.min(100, next.trust));
-  next.closeness = Math.max(0, Math.min(100, next.closeness));
-  next.tension = Math.max(0, Math.min(100, next.tension));
-  next.updatedAt = now;
-  return next;
-}
-const starter: Message[] = [{ id: "welcome", role: "assistant", content: "Hey, you made it. 😊 I’m Mira. We can take this one conversation at a time. What’s on your mind?", time: Date.now() }];
-
-const MEMORY_CATEGORIES = ["Preferences", "Stories", "People", "Milestones", "General"] as const;
-type MemoryCategory = (typeof MEMORY_CATEGORIES)[number];
-type MemoryEntry = { category: MemoryCategory; text: string; index: number };
-
-function parseMemoryEntries(memory: string): MemoryEntry[] {
-  return memory.split("\n").map((line, index) => {
-    const match = line.match(/^\[(Preferences|Stories|People|Milestones|General)\]\s*(.*)$/i);
-    const category = match ? MEMORY_CATEGORIES.find((item) => item.toLowerCase() === match[1].toLowerCase()) || "General" : "General";
-    return { category, text: (match ? match[2] : line).trim(), index };
-  }).filter((entry) => entry.text.length > 0 || /^\[(Preferences|Stories|People|Milestones|General)\]/i.test(memory.split("\n")[entry.index] || ""));
-}
-
-function encodeMemoryEntry(category: MemoryCategory, text: string) {
-  return `[${category}] ${text.trim().replace(/\s+/g, " ")}`;
-}
-
-function suggestMemoryFromMessage(content: string): MemorySuggestion | undefined {
-  const text = content.trim().replace(/\s+/g, " ");
-  if (text.length < 8 || text.length > 240 || /\b(password|passcode|ssn|social security|credit card|bank account|financial|salary|debt|health|medical|doctor|therap|illness|disease|diagnos(?:ed|is)|medication|depress|anxiet|suicid|self-harm|politic|vote for|religion|religious|sexual orientation|gender identity|immigration status|exact address)\b/i.test(text)) return undefined;
-  const patterns: { pattern: RegExp; category: MemoryCategory; prefix: string }[] = [
-    { pattern: /\b(?:i like|i love|i enjoy|i prefer|my favorite is|my favourite is|i’m a fan of|i'm a fan of)\s+(.+)/i, category: "Preferences", prefix: "User likes" },
-    { pattern: /\b(?:i’m learning|i'm learning|i am learning|i’m working on|i'm working on|i am working on|i’m building|i'm building|i am building|i’ve been practicing|i've been practicing)\s+(.+)/i, category: "Stories", prefix: "User is working on" },
-    { pattern: /\b(?:i play|i collect|i spend a lot of time)\s+(.+)/i, category: "Preferences", prefix: "User enjoys" },
-  ];
-  for (const item of patterns) {
-    const match = text.match(item.pattern);
-    const detail = match?.[1]?.replace(/[.!?]+$/, "").trim();
-    if (detail && detail.length >= 3 && detail.length <= 120) {
-      return { category: item.category, text: item.prefix + " " + detail + ".", status: "pending" };
-    }
-  }
-  return undefined;
-}
-
-function timeLabel(timestamp: number) {
-  return new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(timestamp);
-}
+type DatingProfile = {
+  id: string; kind: "fictional" | "real"; name: string; age: number; city: string;
+  bio: string; intent: string; interests: string[]; active: boolean; likesUser?: boolean;
+  verified?: boolean; initials: string; palette: string; rules?: { triggers: string[]; replies: string[]; enabled: boolean }[];
+  fallback?: string; photo?: string;
+};
+type ChatMessage = { id: string; sender: "me" | "them"; text: string; time: number };
+type Chat = { profileId: string; messages: ChatMessage[] };
+type Match = { id: string; profileId: string; createdAt: number; unread: boolean };
+type DatingState = {
+  likedProfileIds: string[]; passedProfileIds: string[]; blockedProfileIds: string[];
+  matches: Match[]; chats: Chat[]; ownProfileId: string;
+};
+const KEY = "mira-date-local-v1";
+const STARTER_PROFILES: DatingProfile[] = [
+  {id:"ava",kind:"fictional",name:"Ava Bennett",age:26,city:"Brooklyn, NY",bio:"Museum afternoons, tiny coffee shops, and playlists made for long drives. I’m happiest when a simple plan turns into a story.",intent:"Long-term",interests:["Art","Coffee","Live music","Travel"],active:true,likesUser:true,initials:"AB",palette:"rose",rules:[{triggers:["hello","hey","hi"],replies:["Hey! I was just making coffee. How’s your day going?","Hi there 😊 What’s been the best part of your day?"],enabled:true},{triggers:["music","song"],replies:["I have a playlist for practically every mood. What have you been listening to lately?"],enabled:true},{triggers:["coffee"],replies:["Coffee is always a good idea. I’m very particular about oat milk though. ☕"],enabled:true}],fallback:"I’m not sure what to say to that yet, but I’m listening. Tell me a little more."},
+  {id:"jules",kind:"fictional",name:"Jules Morgan",age:27,city:"Austin, TX",bio:"Weekend hikes, terrible puns, and cooking ambitious meals with questionable results. Looking for something sincere.",intent:"Long-term",interests:["Hiking","Cooking","Dogs","Comedy"],active:true,likesUser:false,initials:"JM",palette:"sage",rules:[{triggers:["hello","hi","hey"],replies:["Hey stranger. Have you eaten anything good today?","Hi! I’m taking a break from pretending I know how to bake sourdough."],enabled:true},{triggers:["dog","dogs"],replies:["Dogs make every situation better. This is a hill I’ll happily stand on."],enabled:true}],fallback:"You’ve got me thinking. Give me another clue?"},
+  {id:"nina",kind:"fictional",name:"Nina Park",age:25,city:"Seattle, WA",bio:"Bookshop wanderer, film photographer, and enthusiastic rainy-day person. Slow conversations are my favorite.",intent:"Long-term",interests:["Books","Photography","Movies","Nature"],active:true,likesUser:true,initials:"NP",palette:"blue",rules:[{triggers:["hello","hey","hi"],replies:["Hi ☁️ I hope your day has been kind to you.","Hey! I just got back from a bookshop. What's your comfort read?"],enabled:true},{triggers:["book","reading"],replies:["Tell me what you're reading. I always need another book recommendation."],enabled:true}],fallback:"I don't have a written reply for that yet. What else is on your mind?"},
+  {id:"zoe",kind:"fictional",name:"Zoe Carter",age:28,city:"Chicago, IL",bio:"Live gigs, spontaneous city walks, and making friends with every cat in the neighborhood.",intent:"See where it goes",interests:["Concerts","Cats","Fashion","Food"],active:true,likesUser:false,initials:"ZC",palette:"plum",rules:[{triggers:["hello","hi","hey"],replies:["Well hello! Any good plans on the horizon?","Hey you. I have a concert recommendation already."],enabled:true}],fallback:"Ha, now that's a conversation starter. Tell me more."},
+  {id:"maya",kind:"fictional",name:"Maya Ellis",age:24,city:"Portland, OR",bio:"Plant parent, amateur ceramicist, and believer that breakfast food belongs at every hour.",intent:"Long-term",interests:["Plants","Art","Brunch","Yoga"],active:true,likesUser:true,initials:"ME",palette:"gold",rules:[{triggers:["hello","hi","hey"],replies:["Hey! I’m currently negotiating with a very dramatic houseplant."],enabled:true}],fallback:"I’m thinking about that. What's your take?"},
+  {id:"sophie",kind:"fictional",name:"Sophie Reed",age:29,city:"Denver, CO",bio:"Mountain air, indie films, and finding the best dumplings in every city I visit.",intent:"Friendship first",interests:["Travel","Movies","Food","Hiking"],active:true,initials:"SR",palette:"coral",rules:[{triggers:["hello","hi","hey"],replies:["Hi! Important question: best dumplings you've ever had?"],enabled:true}],fallback:"I haven't written a reply for that one yet. Keep going?"},
+  {id:"ella",kind:"fictional",name:"Ella Brooks",age:26,city:"Boston, MA",bio:"Designer by day, amateur stargazer by night. I collect little moments and very large sweaters.",intent:"See where it goes",interests:["Design","Space","Coffee","Museums"],active:true,initials:"EB",palette:"lavender",rules:[{triggers:["hello","hi","hey"],replies:["Hey there ✨ What's something you've been curious about lately?"],enabled:true}],fallback:"That's interesting. Tell me a bit more."},
+  {id:"ruby",kind:"fictional",name:"Ruby James",age:27,city:"Los Angeles, CA",bio:"Beach sunsets, old-school R&B, and making dinner for people I care about.",intent:"Long-term",interests:["Music","Cooking","Beach","Fitness"],active:true,initials:"RJ",palette:"sunset",rules:[{triggers:["hello","hi","hey"],replies:["Hey! I was just choosing what to cook tonight. Any suggestions?"],enabled:true}],fallback:"I want to hear more about that."}
+];
+const EMPTY_STATE: DatingState = { likedProfileIds:[], passedProfileIds:[], blockedProfileIds:[], matches:[], chats:[], ownProfileId:"me" };
+const INTERESTS = ["Art","Books","Coffee","Cooking","Concerts","Dogs","Fashion","Fitness","Food","Hiking","Live music","Movies","Nature","Photography","Plants","Space","Travel","Yoga"];
+const profilePalettes: Record<string,string> = {rose:"linear-gradient(145deg,#f4c9c6,#a65f73)",sage:"linear-gradient(145deg,#d4e1c9,#64816e)",blue:"linear-gradient(145deg,#c4d9e8,#627e9d)",plum:"linear-gradient(145deg,#dec5e6,#785b8f)",gold:"linear-gradient(145deg,#f1d9a6,#a77b42)",coral:"linear-gradient(145deg,#f2c1a8,#b86b58)",lavender:"linear-gradient(145deg,#d7d0f4,#7771a5)",sunset:"linear-gradient(145deg,#f4b9a3,#9a5364)"};
+const uid = () => Math.random().toString(36).slice(2,10);
+const time = (value:number) => new Intl.DateTimeFormat(undefined,{hour:"numeric",minute:"2-digit"}).format(value);
 
 export default function Home() {
-  const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [activeConversationId, setActiveConversationId] = useState("");
-  const [hydrated, setHydrated] = useState(false);
-  const activeConversation = conversations.find((conversation) => conversation.id === activeConversationId) ?? conversations[0];
-  const messages = activeConversation?.messages ?? starter;
-  const [input, setInput] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState("");
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [characterSettings, setCharacterSettings] = useState<CharacterSettings>(DEFAULT_SETTINGS);
-  const [memoryDraft, setMemoryDraft] = useState("");
-  const [memoryCategory, setMemoryCategory] = useState<MemoryCategory>("Preferences");
-  const [memoryFilter, setMemoryFilter] = useState("All");
-  const [continuityDraft, setContinuityDraft] = useState("");
-  const [continuityKind, setContinuityKind] = useState<ContinuityKind>("Emotional context");
-  const [ruleTriggerDraft, setRuleTriggerDraft] = useState("");
-  const [ruleRepliesDraft, setRuleRepliesDraft] = useState("");
-  const endRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const [profiles,setProfiles] = useState<DatingProfile[]>(STARTER_PROFILES);
+  const [state,setState] = useState<DatingState>(EMPTY_STATE);
+  const [ready,setReady] = useState(false);
+  const [tab,setTab] = useState("Discover");
+  const [activeProfileId,setActiveProfileId] = useState("");
+  const [toast,setToast] = useState("");
+  const [minAge,setMinAge] = useState(21);
+  const [maxAge,setMaxAge] = useState(35);
+  const [intent,setIntent] = useState("Any");
+  const [interestFilter,setInterestFilter] = useState<string[]>([]);
+  const [showEditor,setShowEditor] = useState(false);
+  const [editingId,setEditingId] = useState("");
+  const [form,setForm] = useState({name:"",age:"25",city:"",bio:"",intent:"Long-term",kind:"fictional" as "fictional"|"real",interests:[] as string[]});
+  const [chatInput,setChatInput] = useState("");
+  const [showFilters,setShowFilters] = useState(false);
+  const [ownName,setOwnName] = useState("Your name");
+  const [ownBio,setOwnBio] = useState("A little about me...");
+  const [ownInterests,setOwnInterests] = useState<string[]>(["Coffee","Travel","Music"]);
 
-  useEffect(() => {
+  useEffect(()=>{
     try {
-      const savedSettings = localStorage.getItem(SETTINGS_KEY);
-      if (savedSettings) {
-        const parsedSettings = JSON.parse(savedSettings);
-        if (parsedSettings && ["balanced", "playful", "gentle", "direct"].includes(parsedSettings.tone) && typeof parsedSettings.memory === "string") {
-          const savedContinuity = Array.isArray(parsedSettings.continuity) ? parsedSettings.continuity
-            .filter((item: unknown) => item && typeof item === "object" && typeof (item as ContinuityEntry).id === "string" &&
-              CONTINUITY_KINDS.includes((item as ContinuityEntry).kind) && typeof (item as ContinuityEntry).text === "string")
-            .slice(-12).map((item: ContinuityEntry) => ({ ...item, text: item.text.trim().slice(0, 220) })).filter((item: ContinuityEntry) => item.text.length > 0) : [];
-          const savedState = parsedSettings.emotionalState && typeof parsedSettings.emotionalState === "object" ? parsedSettings.emotionalState : DEFAULT_EMOTIONAL_STATE;
-          const safeState: EmotionalState = {
-            mood: EMOTIONAL_MOODS.includes(savedState.mood) ? savedState.mood : "neutral",
-            energy: Number.isFinite(savedState.energy) ? Math.max(0, Math.min(100, savedState.energy)) : 68,
-            trust: Number.isFinite(savedState.trust) ? Math.max(0, Math.min(100, savedState.trust)) : 50,
-            closeness: Number.isFinite(savedState.closeness) ? Math.max(0, Math.min(100, savedState.closeness)) : 25,
-            tension: Number.isFinite(savedState.tension) ? Math.max(0, Math.min(100, savedState.tension)) : 10,
-            updatedAt: Number.isFinite(savedState.updatedAt) ? savedState.updatedAt : Date.now(),
-          };
-          setCharacterSettings({ tone: parsedSettings.tone, memory: parsedSettings.memory.slice(0, 1600), continuity: savedContinuity, emotionalState: safeState, replyRules: Array.isArray(parsedSettings.replyRules) ? parsedSettings.replyRules.filter((rule: ReplyRule) => rule && typeof rule.id === "string" && Array.isArray(rule.triggers) && Array.isArray(rule.replies)).slice(0, 300) : DEFAULT_RULES, fallbackReply: typeof parsedSettings.fallbackReply === "string" ? parsedSettings.fallbackReply.slice(0, 1000) : DEFAULT_FALLBACK });
-        }
-      }
-      const savedConversations = localStorage.getItem(CONVERSATIONS_KEY);
-      if (savedConversations) {
-        const parsed = JSON.parse(savedConversations);
-        if (Array.isArray(parsed) && parsed.length && parsed.every((item) => item && typeof item.id === "string" && Array.isArray(item.messages))) {
-          const safe = parsed.slice(0, 50) as Conversation[];
-          setConversations(safe);
-          const savedActiveId = localStorage.getItem("mira-messenger-active-conversation-v1");
-          setActiveConversationId(safe.some((item) => item.id === savedActiveId) ? savedActiveId! : safe[0].id);
-        } else {
-          const fallback: Conversation = { id: crypto.randomUUID(), title: "Our conversation", updatedAt: Date.now(), messages: starter };
-          setConversations([fallback]); setActiveConversationId(fallback.id);
-        }
-      } else {
-        const oldHistory = localStorage.getItem(STORAGE_KEY);
-        let initialMessages = starter;
-        if (oldHistory) {
-          const parsed = JSON.parse(oldHistory);
-          if (Array.isArray(parsed) && parsed.length) initialMessages = parsed;
-        }
-        const migrated: Conversation = { id: crypto.randomUUID(), title: "Our conversation", updatedAt: Date.now(), messages: initialMessages };
-        setConversations([migrated]); setActiveConversationId(migrated.id);
-      }
-    } catch {
-      const fallback: Conversation = { id: crypto.randomUUID(), title: "Our conversation", updatedAt: Date.now(), messages: starter };
-      setConversations([fallback]); setActiveConversationId(fallback.id);
-    } finally { setHydrated(true); }
-  }, []);
+      const raw=localStorage.getItem(KEY);
+      if(raw){const saved=JSON.parse(raw); if(Array.isArray(saved.profiles)&&saved.profiles.length) setProfiles(saved.profiles); if(saved.state) setState({...EMPTY_STATE,...saved.state}); if(saved.filters){setMinAge(saved.filters.minAge??21);setMaxAge(saved.filters.maxAge??35);setIntent(saved.filters.intent??"Any");setInterestFilter(saved.filters.interestFilter??[]);} if(saved.own){setOwnName(saved.own.name??"Your name");setOwnBio(saved.own.bio??"A little about me...");setOwnInterests(saved.own.interests??[]);}}
+    } catch { /* Start with the bundled starter data if storage is invalid. */ }
+    setReady(true);
+  },[]);
+  useEffect(()=>{if(!ready)return;try{localStorage.setItem(KEY,JSON.stringify({profiles,state,filters:{minAge,maxAge,intent,interestFilter},own:{name:ownName,bio:ownBio,interests:ownInterests}}));}catch{/* Device storage can be full. */}},[profiles,state,minAge,maxAge,intent,interestFilter,ownName,ownBio,ownInterests,ready]);
 
-  useEffect(() => {
-    if (!hydrated) return;
-    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(characterSettings)); } catch { /* Storage may be unavailable. */ }
-  }, [characterSettings, hydrated]);
+  const discovery = useMemo(()=>getDiscoverProfiles(profiles,{minAge,maxAge,intent,interests:interestFilter},state),[profiles,minAge,maxAge,intent,interestFilter,state]);
+  const current = discovery[0];
+  const matches = state.matches.map(m=>({match:m,profile:profiles.find(p=>p.id===m.profileId)})).filter(x=>x.profile);
+  const liked = state.likedProfileIds.map(id=>profiles.find(p=>p.id===id)).filter(Boolean) as DatingProfile[];
+  const activeChat = profiles.find(p=>p.id===activeProfileId);
+  const chat = state.chats.find(c=>c.profileId===activeProfileId);
+  const sayToast=(message:string)=>{setToast(message);window.setTimeout(()=>setToast(""),2200);};
 
-  useEffect(() => {
-    if (!hydrated) return;
-    try {
-      localStorage.setItem(CONVERSATIONS_KEY, JSON.stringify(conversations.slice(0, 50).map((conversation) => ({ ...conversation, messages: conversation.messages.slice(-200) }))));
-      localStorage.setItem("mira-messenger-active-conversation-v1", activeConversationId);
-      localStorage.removeItem(STORAGE_KEY);
-    } catch { /* Storage may be unavailable. */ }
-    endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [conversations, activeConversationId, busy, hydrated]);
-
-  async function sendMessage(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const content = input.trim();
-    if (!content || busy || !activeConversation) return;
-    const conversationId = activeConversation.id;
-    const nextEmotionalState = evolveEmotionalState(characterSettings.emotionalState, content);
-    setCharacterSettings((current) => ({ ...current, emotionalState: nextEmotionalState }));
-    const userMessage: Message = { id: crypto.randomUUID(), role: "user", content, time: Date.now(), memorySuggestion: suggestMemoryFromMessage(content) };
-    const next = [...activeConversation.messages, userMessage].slice(-200);
-    const title = activeConversation.messages.some((message) => message.role === "user") ? activeConversation.title : content.slice(0, 36) + (content.length > 36 ? "…" : "");
-    setConversations((current) => current.map((conversation) => conversation.id === conversationId ? { ...conversation, title, updatedAt: Date.now(), messages: next } : conversation));
-    setInput(""); setBusy(true); setNotice("");
-    const reply = chooseLocalReply(content, characterSettings.replyRules, characterSettings.fallbackReply);
-    window.setTimeout(() => {
-      setConversations((current) => current.map((conversation) => conversation.id === conversationId ? { ...conversation, updatedAt: Date.now(), messages: [...conversation.messages, { id: crypto.randomUUID(), role: "assistant" as const, content: reply, time: Date.now() }].slice(-200) } : conversation));
-      setBusy(false); inputRef.current?.focus();
-    }, 300);
+  function act(action:"like"|"pass"){
+    if(!current)return;
+    const result=applyProfileAction(state,current,action);
+    setState(result.state);
+    if(result.matched){setTab("Matches");sayToast("It's a match! 💗");}
+    else if(action==="like")sayToast("Like saved");
   }
-
-  function addReplyRule() {
-    const triggers = ruleTriggerDraft.split(",").map((item) => item.trim()).filter(Boolean).slice(0, 20);
-    const replies = ruleRepliesDraft.split("\n").map((item) => item.trim()).filter(Boolean).slice(0, 20);
-    if (!triggers.length || !replies.length) { setNotice("Add at least one trigger and one reply."); return; }
-    setCharacterSettings((current) => ({ ...current, replyRules: [...current.replyRules, { id: crypto.randomUUID(), triggers, replies, enabled: true }].slice(-300) }));
-    setRuleTriggerDraft(""); setRuleRepliesDraft(""); setNotice("Added to Mira’s local Reply Library.");
+  function openEditor(profile?:DatingProfile){
+    setEditingId(profile?.id??"");
+    setForm(profile?{name:profile.name,age:String(profile.age),city:profile.city,bio:profile.bio,intent:profile.intent,kind:profile.kind,interests:profile.interests}:{name:"",age:"25",city:"",bio:"",intent:"Long-term",kind:"fictional",interests:[]});
+    setShowEditor(true);
   }
-
-  function updateReplyRule(id: string, patch: Partial<ReplyRule>) {
-    setCharacterSettings((current) => ({ ...current, replyRules: current.replyRules.map((rule) => rule.id === id ? { ...rule, ...patch } : rule) }));
+  function saveProfile(e:FormEvent){
+    e.preventDefault();
+    const age=Number(form.age);
+    if(!form.name.trim()||!Number.isInteger(age)||age<18||age>99){sayToast("Enter a name and a valid age (18+)");return;}
+    const existing=profiles.find(p=>p.id===editingId);
+    const next:DatingProfile={id:editingId||uid(),kind:form.kind,name:form.name.trim(),age,city:form.city.trim()||"Location not added",bio:form.bio.trim(),intent:form.intent,interests:form.interests,active:true,initials:form.name.trim().split(/\s+/).map(x=>x[0]).slice(0,2).join("").toUpperCase(),palette:existing?.palette??Object.keys(profilePalettes)[profiles.length%Object.keys(profilePalettes).length],likesUser:false,rules:form.kind==="fictional"?(existing?.rules??[{triggers:["hello","hi","hey"],replies:["Hey! Nice to hear from you."],enabled:true}]):undefined,fallback:existing?.fallback??"I haven't added a reply for that yet."};
+    setProfiles(old=>existing?old.map(p=>p.id===editingId?{...p,...next}:p):[next,...old]);
+    setShowEditor(false);sayToast(editingId?"Profile updated":"Profile added");
   }
-
-  function deleteReplyRule(id: string) {
-    setCharacterSettings((current) => ({ ...current, replyRules: current.replyRules.filter((rule) => rule.id !== id) }));
+  function startChat(profile:DatingProfile){
+    setActiveProfileId(profile.id);setTab("Messages");
+    setState(old=>old.chats.some(c=>c.profileId===profile.id)?old:{...old,chats:[...old.chats,{profileId:profile.id,messages:[]} ]});
   }
-  function rememberMessage(message: Message) {
-    const label = message.role === "user" ? "You" : "Mira";
-    const entry = encodeMemoryEntry("General", `• ${label}: ${message.content.trim().replace(/\s+/g, " ")}`);
-    const existing = characterSettings.memory.split("\n").map((line) => line.trim()).filter(Boolean);
-    if (existing.includes(entry)) {
-      setNotice("That message is already in Mira’s shared memory notes.");
-      return;
+  function sendChat(e:FormEvent){
+    e.preventDefault();if(!activeChat||!chatInput.trim())return;
+    const text=chatInput.trim();const userMsg:ChatMessage={id:uid(),sender:"me",text,time:Date.now()};
+    setState(old=>({...old,chats:old.chats.map(c=>c.profileId===activeChat.id?{...c,messages:[...c.messages,userMsg]}:c)}));
+    setChatInput("");
+    if(activeChat.kind==="fictional"){
+      const reply=chooseProfileReply(text,activeChat.rules,activeChat.fallback);
+      window.setTimeout(()=>setState(old=>({...old,chats:old.chats.map(c=>c.profileId===activeChat.id?{...c,messages:[...c.messages,{id:uid(),sender:"them",text:reply,time:Date.now()}]}:c)})),650);
     }
-    const combined = [characterSettings.memory.trim(), entry].filter(Boolean).join("\n");
-    if (combined.length > 1600) {
-      setNotice("Mira’s memory notes are full. Open settings and edit or shorten them before saving this message.");
-      return;
-    }
-    setCharacterSettings((current) => ({ ...current, memory: [current.memory.trim(), entry].filter(Boolean).join("\n") }));
-    setNotice("Saved to Mira’s shared memory notes. You can review or edit it in character settings.");
   }
-
-  function handleMemorySuggestion(conversationId: string, messageId: string, action: "save" | "dismiss") {
-    const candidate = conversations.find((conversation) => conversation.id === conversationId)?.messages.find((message) => message.id === messageId)?.memorySuggestion;
-    if (!candidate || candidate.status !== "pending") return;
-    if (action === "save") {
-      const entry = encodeMemoryEntry(candidate.category, candidate.text);
-      const existing = characterSettings.memory.split("\n").map((line) => line.trim()).filter(Boolean);
-      if (existing.includes(entry)) {
-        setNotice("That detail is already in Mira’s memory.");
-      } else {
-        const combined = [characterSettings.memory.trim(), entry].filter(Boolean).join("\n");
-        if (combined.length > 1600) {
-          setNotice("Mira’s memory is full. Open settings and shorten or remove a note before saving this suggestion.");
-          return;
-        }
-        setCharacterSettings((current) => ({ ...current, memory: [current.memory.trim(), entry].filter(Boolean).join("\n") }));
-        setNotice("Saved the suggested detail to Mira’s memory.");
-      }
-    }
-    setConversations((current) => current.map((conversation) => conversation.id !== conversationId ? conversation : {
-      ...conversation,
-      messages: conversation.messages.map((message) => message.id !== messageId || !message.memorySuggestion ? message : {
-        ...message, memorySuggestion: { ...message.memorySuggestion, status: action === "save" ? "saved" : "dismissed" },
-      }),
-    }));
+  function toggleInterest(value:string){
+    setForm(old=>({...old,interests:old.interests.includes(value)?old.interests.filter(x=>x!==value):[...old.interests,value]}));
   }
-
-  function addMemoryEntry() {
-    const text = memoryDraft.trim().replace(/\s+/g, " ");
-    if (!text) return;
-    const entry = encodeMemoryEntry(memoryCategory, text);
-    const existing = characterSettings.memory.split("\n").map((line) => line.trim()).filter(Boolean);
-    if (existing.includes(entry)) {
-      setNotice("That note is already in Mira’s memory.");
-      return;
-    }
-    const combined = [characterSettings.memory.trim(), entry].filter(Boolean).join("\n");
-    if (combined.length > 1600) {
-      setNotice("Mira’s memory is full. Remove or shorten a note before adding another.");
-      return;
-    }
-    setCharacterSettings((current) => ({ ...current, memory: [current.memory.trim(), entry].filter(Boolean).join("\n") }));
-    setMemoryDraft("");
-    setNotice("Added to Mira’s shared memory.");
+  function toggleFilterInterest(value:string){
+    setInterestFilter(old=>old.includes(value)?old.filter(x=>x!==value):[...old,value]);
   }
-
-  function updateMemoryEntry(index: number, category: MemoryCategory, text: string) {
-    const lines = characterSettings.memory.split("\n");
-    lines[index] = encodeMemoryEntry(category, text);
-    const combined = lines.filter((line) => line.trim()).join("\n");
-    if (combined.length > 1600) {
-      setNotice("That edit would exceed the memory limit. Shorten the note a little.");
-      return;
-    }
-    setCharacterSettings((current) => ({ ...current, memory: combined }));
+  function blockProfile(profile:DatingProfile){
+    setState(old=>({...old,blockedProfileIds:[...old.blockedProfileIds,profile.id],likedProfileIds:old.likedProfileIds.filter(id=>id!==profile.id),matches:old.matches.filter(m=>m.profileId!==profile.id),chats:old.chats.filter(c=>c.profileId!==profile.id)}));
+    setActiveProfileId("");sayToast("Profile blocked on this device");
   }
+  const nav=[["Discover","✦"],["Likes","♡"],["Matches","♥"],["Messages","▤"],["Profile","◉"]];
+  if(!ready)return <main className="boot-screen"><div className="boot-logo">♡</div><span>LOVEBIRD</span></main>;
 
-  function deleteMemoryEntry(index: number) {
-    const lines = characterSettings.memory.split("\n");
-    lines.splice(index, 1);
-    setCharacterSettings((current) => ({ ...current, memory: lines.filter((line) => line.trim()).join("\n") }));
-    setNotice("Removed that note from Mira’s memory.");
-  }
-
-  function addContinuityEntry() {
-    const text = continuityDraft.trim().replace(/\s+/g, " ");
-    if (!text) return;
-    if (text.length > 220) {
-      setNotice("Keep each continuity note under 220 characters.");
-      return;
-    }
-    const duplicate = characterSettings.continuity.some((entry) => entry.kind === continuityKind && entry.text.toLowerCase() === text.toLowerCase());
-    if (duplicate) {
-      setNotice("That continuity note is already saved.");
-      return;
-    }
-    if (characterSettings.continuity.length >= 12) {
-      setNotice("The continuity journal holds up to 12 notes. Remove an old note to make room.");
-      return;
-    }
-    setCharacterSettings((current) => ({ ...current, continuity: [...current.continuity, { id: crypto.randomUUID(), kind: continuityKind, text, createdAt: Date.now() }] }));
-    setContinuityDraft("");
-    setNotice("Added to Mira’s continuity journal.");
-  }
-
-  function deleteContinuityEntry(id: string) {
-    setCharacterSettings((current) => ({ ...current, continuity: current.continuity.filter((entry) => entry.id !== id) }));
-    setNotice("Removed that continuity note.");
-  }
-
-  function createConversation() {
-    if (busy) return;
-    const now = Date.now();
-    const conversation: Conversation = { id: crypto.randomUUID(), title: "New conversation", updatedAt: now, messages: [{ ...starter[0], id: crypto.randomUUID(), time: now }] };
-    setConversations((current) => [conversation, ...current].slice(0, 50));
-    setActiveConversationId(conversation.id); setNotice(""); setInput("");
-    inputRef.current?.focus();
-  }
-
-  function clearChat() {
-    if (!activeConversation || !window.confirm("Clear this conversation's messages? Other conversations will be kept.")) return;
-    const now = Date.now();
-    const freshMessages = [{ ...starter[0], id: crypto.randomUUID(), time: now }];
-    setConversations((current) => current.map((conversation) => conversation.id === activeConversation.id
-      ? { ...conversation, title: "New conversation", updatedAt: now, messages: freshMessages } : conversation));
-    setNotice(""); setInput("");
-  }
-
-  function deleteConversation(conversationId: string) {
-    if (busy || !window.confirm("Delete this conversation from this browser?")) return;
-    const remaining = conversations.filter((conversation) => conversation.id !== conversationId);
-    if (remaining.length === 0) {
-      const now = Date.now();
-      const fresh: Conversation = { id: crypto.randomUUID(), title: "New conversation", updatedAt: now, messages: [{ ...starter[0], id: crypto.randomUUID(), time: now }] };
-      setConversations([fresh]); setActiveConversationId(fresh.id);
-    } else {
-      setConversations(remaining);
-      if (activeConversationId === conversationId) setActiveConversationId(remaining[0].id);
-    }
-    setNotice("");
-  }
-
-  return (
-    <main className="app-shell">
-      <div className="ambient ambient-one" aria-hidden="true" />
-      <div className="ambient ambient-two" aria-hidden="true" />
-      <aside className={`sidebar ${sidebarOpen ? "sidebar-open" : ""}`}>
-        <button className="mobile-sidebar-close" type="button" aria-label="Close conversations" onClick={() => setSidebarOpen(false)}>×</button>
-        <a className="brand" href="#" aria-label="Mira home"><span className="brand-mark"><span>m</span><i>✳</i></span><span className="brand-wordmark">mira<span className="brand-period">.</span><small>YOUR PRIVATE UNIVERSE</small></span></a>
-        <button className="new-chat" onClick={createConversation} type="button" disabled={busy}><span className="plus-icon">＋</span> New conversation <kbd>⌘ K</kbd></button>
-        <div className="side-label">YOUR SPACE</div>
-        <div className="conversation-list" aria-label="Saved conversations">
-          {conversations.map((conversation) => <div className={`conversation-item ${conversation.id === activeConversationId ? "active" : ""}`} key={conversation.id}>
-            <button className={`chat-link ${conversation.id === activeConversationId ? "active" : ""}`} type="button" onClick={() => { if (!busy) { setActiveConversationId(conversation.id); setNotice(""); setSidebarOpen(false); } }} disabled={busy} title={conversation.title}>
-              <span className="tiny-avatar"><span>M</span><i /></span>
-              <span className="chat-link-copy"><strong>{conversation.title || "New conversation"}</strong><small>{new Date(conversation.updatedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })} · {conversation.messages.length} messages</small></span>
-            </button>
-            <button className="conversation-delete" type="button" aria-label={`Delete ${conversation.title}`} title="Delete conversation" disabled={busy} onClick={() => deleteConversation(conversation.id)}>×</button>
-          </div>)}
-        </div>
-        <div className="sidebar-feature">
-          <div className="feature-orbit"><span className="orbit-star">✳</span><span className="orbit-dot" /><span className="orbit-dot orbit-dot-two" /><div className="feature-avatar">M</div></div>
-          <span className="feature-eyebrow">A LITTLE SPACE, JUST FOR YOU</span>
-          <h2>Talk it out.<br /><em>Stay a while.</em></h2>
-          <p>Thoughtful conversations, one message at a time.</p>
-          <div className="feature-line"><span /> YOUR SPACE IS READY</div>
-        </div>
-        <div className="sidebar-bottom"><span className="secure-icon">✳</span><span><strong>Private by design</strong><small>Stored on this device</small></span><span className="status-dot" /></div>
-      </aside>
-
-      {sidebarOpen && <button className="mobile-sidebar-scrim" type="button" aria-label="Close conversations" onClick={() => setSidebarOpen(false)} />}
-      <section className="chat-panel">
-        <header className="chat-header">
-          <div className="profile-avatar" aria-hidden="true"><span>M</span><i /></div>
-          <div className="profile-copy"><h1>Mira Bennett <span className="verified-mark">✦</span></h1><p><span className="online-dot" /> Your offline character <span className="header-dot">·</span> ready when you are</p></div>
-          <div className="header-actions"><button className="icon-button mobile-menu-trigger" type="button" aria-label="Open conversations" title="Conversations" onClick={() => setSidebarOpen(true)}>☰</button><span className="encrypted-pill"><span /> PRIVATE CHAT</span><button className="icon-button new-chat-mobile" type="button" aria-label="New conversation" title="New conversation" onClick={createConversation} disabled={busy}>＋</button><button className="icon-button settings-trigger" type="button" aria-label="Open character settings" title="Character settings" onClick={() => setSettingsOpen(true)}><span>⚙</span></button><button className="icon-button" type="button" aria-label="Clear current conversation" title="Clear current conversation" onClick={clearChat}><span>↻</span></button></div>
-        </header>
-
-        <div className="messages-area">
-          <div className="conversation-intro"><span className="intro-line" /><span>THE CONVERSATION</span><span className="intro-line" /></div>
-          <div className="intro-note"><span className="note-icon">✳</span><span>A quiet corner on your device. Mira uses your written replies.</span><button type="button" aria-label="Dismiss note" onClick={(e) => e.currentTarget.parentElement?.remove()}>×</button></div>
-          {messages.map((message, index) => (
-            <div className={`message-row ${message.role === "user" ? "mine" : "theirs"}`} key={message.id} style={{ animationDelay: `${Math.min(index * 45, 240)}ms` }}>
-              {message.role === "assistant" && <div className="message-avatar"><span>M</span></div>}
-              <div className="message-content"><div className="bubble">{message.content}</div><div className="message-meta"><time>{timeLabel(message.time)}</time>{message.role === "user" && <span className="read-receipt" title="Sent">✓✓</span>}{message.id !== "welcome" && <button className="remember-message" type="button" onClick={() => rememberMessage(message)} title="Save this message to memory">✳ Remember</button>}{message.role === "user" && message.memorySuggestion?.status === "pending" && <div className="memory-suggestion"><div className="memory-suggestion-copy"><span className="memory-suggestion-icon">✳</span><span><strong>Worth remembering?</strong><small>Mira could keep this detail across chats. Nothing is saved unless you choose.</small></span></div><div className="memory-suggestion-actions"><button type="button" onClick={() => handleMemorySuggestion(activeConversation?.id || "", message.id, "save")}>Save detail</button><button type="button" className="memory-suggestion-dismiss" onClick={() => handleMemorySuggestion(activeConversation?.id || "", message.id, "dismiss")}>Not now</button></div></div>}{message.memorySuggestion && message.memorySuggestion.status !== "pending" && <small className="memory-suggestion-status">{message.memorySuggestion.status === "saved" ? "✳ Saved to Mira’s memory" : "Suggestion dismissed"}</small>}</div></div>
-            </div>
-          ))}
-          {busy && <div className="message-row theirs typing-row"><div className="message-avatar"><span>M</span></div><div className="message-content"><div className="bubble typing"><span /><span /><span /></div><small className="typing-label">Mira is finding her words</small></div></div>}
-          {notice && <div className="error-notice" role="alert"><span className="error-symbol">!</span><span>{notice}</span><button type="button" onClick={() => setNotice("")} aria-label="Dismiss error">×</button></div>}
-          <div ref={endRef} />
-        </div>
-
-        <div className="composer-wrap">
-          <form className="composer" onSubmit={sendMessage}>
-            <button className="composer-plus" type="button" title="A little room for more" aria-label="Focus message input" onClick={() => inputRef.current?.focus()}>＋</button>
-            <textarea ref={inputRef} value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); (e.currentTarget.form as HTMLFormElement | null)?.requestSubmit(); } }} placeholder="Write your next thought..." rows={1} maxLength={6000} aria-label="Message Mira" />
-            <span className="composer-sparkle" aria-hidden="true">✳</span>
-            <button className="send-button" type="submit" disabled={busy || !input.trim()} aria-label="Send message"><span>↑</span></button>
-          </form>
-          <div className="composer-foot"><span><kbd>↵</kbd> to send <span className="foot-separator">·</span> <kbd>⇧ ↵</kbd> new line</span><span className="powered-label"><span className="powered-dot" /> MADE FOR MEANINGFUL MOMENTS</span></div>
-        </div>
+  return <main className="dating-app">
+    <header className="topbar"><button className="wordmark" onClick={()=>setTab("Discover")}><span className="logo-mark">♡</span><span>lovely<span className="logo-dot">.</span><small>YOUR OFFLINE DATING WORLD</small></span></button><div className="top-actions"><span className="offline-pill"><i/> Offline mode</span><button className="icon-button" aria-label="Settings" onClick={()=>setTab("Settings")}>⚙</button></div></header>
+    <div className="app-layout">
+      <aside className="side-nav"><div className="side-kicker">YOUR SPACE</div>{nav.map(([label,icon])=><button key={label} className={tab===label?"nav-item active":"nav-item"} onClick={()=>{setTab(label);setActiveProfileId("");}}><span>{icon}</span>{label}{label==="Likes"&&liked.length>0?<b>{liked.length}</b>:null}{label==="Matches"&&matches.length>0?<b>{matches.length}</b>:null}</button>)}<div className="side-bottom"><div className="local-card"><span className="local-icon">⌁</span><div><strong>Just you & your data</strong><small>Everything stays on this device.</small></div></div><button className="nav-item" onClick={()=>setTab("Settings")}><span>⚙</span>Settings</button></div></aside>
+      <section className="main-content">
+        {tab==="Discover"&&<><div className="section-heading"><div><span className="eyebrow">A LITTLE SPARK GOES A LONG WAY</span><h1>Discover <em>someone.</em></h1><p>Good connections start with a little curiosity.</p></div><button className="filter-button" onClick={()=>setShowFilters(v=>!v)}>☷ Filters</button></div>
+          {showFilters&&<div className="filter-panel"><div className="filter-row"><label>Age range <strong>{minAge}–{maxAge}</strong></label><input type="range" min="18" max="60" value={minAge} onChange={e=>setMinAge(Math.min(Number(e.target.value),maxAge))}/><input type="range" min="18" max="60" value={maxAge} onChange={e=>setMaxAge(Math.max(Number(e.target.value),minAge))}/></div><label className="field-label">Looking for</label><select value={intent} onChange={e=>setIntent(e.target.value)}><option>Any</option><option>Long-term</option><option>See where it goes</option><option>Friendship first</option></select><label className="field-label">Shared interests</label><div className="chips">{INTERESTS.map(x=><button key={x} className={interestFilter.includes(x)?"chip selected":"chip"} onClick={()=>toggleFilterInterest(x)}>{x}</button>)}</div></div>}
+          {current?<div className="discovery-wrap"><article className="profile-card"><div className={"portrait portrait-"+current.palette} style={{background:profilePalettes[current.palette]||profilePalettes.rose}}><div className="portrait-grain"/><div className="portrait-orbit orbit-one"/><div className="portrait-orbit orbit-two"/><div className="portrait-monogram">{current.initials}</div><div className="portrait-top"><span className="profile-kind">{current.kind==="fictional"?"✧ Fictional profile":"◉ Member profile"}</span><button className="more-button" onClick={()=>blockProfile(current)}>•••</button></div><div className="portrait-caption"><span className="online-dot"/>{current.kind==="fictional"?"Character experience":"Manually added profile"}</div></div><div className="profile-info"><div className="profile-title"><div><h2>{current.name}, {current.age}</h2><p>⌖ {current.city}</p></div><span className="compatibility">{getCompatibilityScore(current,{minAge,maxAge,intent,interests:interestFilter})}% <small>FIT</small></span></div><p className="profile-bio">{current.bio}</p><div className="intent-label">♡ {current.intent}</div><div className="chips profile-chips">{current.interests.map(x=><span className="chip" key={x}>{x}</span>)}</div><div className="card-actions"><button className="pass-button" onClick={()=>act("pass")} aria-label="Pass">×</button><button className="info-button" onClick={()=>sayToast(current.kind==="fictional"?"Fictional character profile":"Manually entered member profile")}>ⓘ</button><button className="like-button" onClick={()=>act("like")} aria-label="Like">♥</button></div><button className="edit-profile-link" onClick={()=>openEditor(current)}>Edit this profile</button></div></article><div className="discovery-side"><div className="side-note"><span>✧</span><h3>Made for meaningful moments.</h3><p>Every profile is stored locally. Your discovery feed is shaped by the preferences you choose.</p></div><div className="stat-card"><div><strong>{profiles.filter(p=>p.active).length}</strong><small>ACTIVE PROFILES</small></div><div><strong>{matches.length}</strong><small>YOUR MATCHES</small></div></div><button className="outline-button" onClick={()=>openEditor()}>＋ Add a profile</button></div></div>:<div className="empty-state"><div className="empty-heart">♡</div><h2>You've seen everyone for now.</h2><p>Try widening your filters or add more profiles to your local collection.</p><button className="primary-button" onClick={()=>{setShowFilters(true);setMinAge(18);setMaxAge(60);setIntent("Any");setInterestFilter([]);}}>Reset filters</button><button className="text-button" onClick={()=>openEditor()}>＋ Add a profile</button></div>}
+        </>}
+        {tab==="Likes"&&<><div className="section-heading"><div><span className="eyebrow">A LITTLE INTEREST</span><h1>Your <em>likes.</em></h1><p>Profiles you've saved with a heart.</p></div></div>{liked.length?<div className="profile-grid">{liked.map(p=><ProfileTile key={p.id} profile={p} score={getCompatibilityScore(p,{})} onEdit={()=>openEditor(p)} onOpen={()=>startChat(p)}/>)}</div>:<Empty title="No likes just yet" body="When someone catches your eye, tap the heart and they'll show up here."/>}</>}
+        {tab==="Matches"&&<><div className="section-heading"><div><span className="eyebrow">IT TAKES TWO</span><h1>It's a <em>match.</em></h1><p>Your mutual connections, all in one place.</p></div></div>{matches.length?<div className="profile-grid">{matches.map(({match,profile})=><ProfileTile key={match.id} profile={profile!} score={getCompatibilityScore(profile!,{})} onEdit={()=>openEditor(profile!)} onOpen={()=>startChat(profile!)}/>)}</div>:<Empty title="Your next match starts here" body="Like a profile marked as mutually interested to create a local match."/>}</>}
+        {tab==="Messages"&&<div className="messages-layout"><div className="conversation-list"><div className="list-heading"><span className="eyebrow">YOUR CONNECTIONS</span><h2>Messages</h2></div>{state.chats.map(c=>{const p=profiles.find(x=>x.id===c.profileId);if(!p)return null;return <button key={c.profileId} className={activeProfileId===p.id?"conversation-item active":"conversation-item"} onClick={()=>setActiveProfileId(p.id)}><Avatar profile={p}/><span><strong>{p.name}</strong><small>{c.messages.at(-1)?.text??(p.kind==="fictional"?"Say hello and start a conversation":"Conversation notes")}</small></span></button>})}{!state.chats.length&&<p className="muted-copy">Your conversations will appear here after you open a match or like.</p>}</div><div className="chat-window">{activeChat?<><div className="chat-head"><Avatar profile={activeChat}/><div><strong>{activeChat.name}</strong><small>{activeChat.kind==="fictional"?"Fictional character · local dialogue":"Manually added profile · manual notes only"}</small></div><button className="icon-button" onClick={()=>blockProfile(activeChat)}>•••</button></div><div className="chat-history"><div className="chat-intro"><Avatar profile={activeChat}/><h3>{activeChat.name}</h3><p>{activeChat.kind==="fictional"?"A fictional character experience. Replies come only from the dialogue rules saved in this app.":"A manually added profile. Messages are notes you enter yourself; this person is not connected to the app."}</p></div>{(chat?.messages??[]).map(m=><div key={m.id} className={m.sender==="me"?"bubble-row mine":"bubble-row"}><div className="chat-bubble">{m.text}<small>{time(m.time)}</small></div></div>)}{activeChat.kind==="real"&&<div className="manual-note">Manual profile: this app cannot send messages to or receive messages from the real person.</div>}</div><form className="chat-composer" onSubmit={sendChat}><input value={chatInput} onChange={e=>setChatInput(e.target.value)} placeholder={activeChat.kind==="fictional"?"Write a message...":"Add a private note..."} /><button type="submit" disabled={!chatInput.trim()}>↑</button></form></>:<div className="chat-placeholder"><div className="empty-heart">♡</div><h3>Your conversations live here.</h3><p>Choose a connection from the list, or explore profiles to meet someone new.</p><button className="primary-button" onClick={()=>setTab("Discover")}>Explore profiles</button></div>}</div></div>}
+        {tab==="Profile"&&<><div className="section-heading"><div><span className="eyebrow">THE PERSON BEHIND THE PROFILE</span><h1>Your <em>profile.</em></h1><p>Set the tone for the connections you want to make.</p></div></div><div className="settings-card"><div className="own-profile-top"><div className="own-avatar">{(ownName||"Y").slice(0,1).toUpperCase()}</div><div><h2>{ownName}</h2><p>Your local profile · visible only on this device</p></div></div><label className="field-label">Display name</label><input className="text-field" value={ownName} onChange={e=>setOwnName(e.target.value)} /><label className="field-label">About me</label><textarea className="text-field" rows={4} value={ownBio} onChange={e=>setOwnBio(e.target.value)}/><label className="field-label">My interests</label><div className="chips">{INTERESTS.map(x=><button key={x} className={ownInterests.includes(x)?"chip selected":"chip"} onClick={()=>setOwnInterests(old=>old.includes(x)?old.filter(i=>i!==x):[...old,x])}>{x}</button>)}</div><button className="primary-button" onClick={()=>sayToast("Your profile is saved on this device")}>Save profile</button></div></>}
+        {tab==="Settings"&&<><div className="section-heading"><div><span className="eyebrow">YOUR APP, YOUR RULES</span><h1>App <em>settings.</em></h1><p>Manage your local dating experience.</p></div></div><div className="settings-grid"><div className="settings-card"><h3>Discovery preferences</h3><label className="field-label">Minimum age: {minAge}</label><input type="range" min="18" max="60" value={minAge} onChange={e=>setMinAge(Math.min(+e.target.value,maxAge))}/><label className="field-label">Maximum age: {maxAge}</label><input type="range" min="18" max="60" value={maxAge} onChange={e=>setMaxAge(Math.max(+e.target.value,minAge))}/><label className="field-label">Relationship intention</label><select value={intent} onChange={e=>setIntent(e.target.value)}><option>Any</option><option>Long-term</option><option>See where it goes</option><option>Friendship first</option></select></div><div className="settings-card"><h3>Profile library</h3><p className="muted-copy">{profiles.length} profiles saved locally. Fictional profiles use local dialogue. Real-person profiles are manual records only.</p><button className="primary-button" onClick={()=>openEditor()}>＋ Add profile</button><div className="managed-list">{profiles.map(p=><div className="managed-row" key={p.id}><Avatar profile={p}/><span><strong>{p.name}</strong><small>{p.kind==="fictional"?"Fictional":"Real-person record"} · {p.age}</small></span><button className="small-action" onClick={()=>openEditor(p)}>Edit</button><button className="small-action danger" onClick={()=>{setProfiles(old=>old.filter(x=>x.id!==p.id));setState(old=>({...old,likedProfileIds:old.likedProfileIds.filter(id=>id!==p.id),matches:old.matches.filter(m=>m.profileId!==p.id),chats:old.chats.filter(c=>c.profileId!==p.id)}));}}>Delete</button></div>)}</div></div><div className="settings-card"><h3>Privacy & local data</h3><div className="privacy-line"><span>Offline storage</span><b>On this device</b></div><div className="privacy-line"><span>AI services</span><b>Not used</b></div><div className="privacy-line"><span>Backend server</span><b>Not required</b></div><div className="privacy-line"><span>Network access</span><b>Not required</b></div><button className="outline-button danger-outline" onClick={()=>{if(confirm("Delete all local likes, matches, conversations and preferences? This cannot be undone.")){setState(EMPTY_STATE);setProfiles(STARTER_PROFILES);setMinAge(21);setMaxAge(35);setIntent("Any");setInterestFilter([]);sayToast("Local dating data reset");}}}>Reset local dating data</button></div></div></>}
       </section>
-      {settingsOpen && <div className="settings-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSettingsOpen(false); }}>
-        <section className="settings-drawer" role="dialog" aria-modal="true" aria-labelledby="settings-title">
-          <div className="settings-heading"><div><span className="settings-eyebrow">MAKE THIS SPACE YOURS</span><h2 id="settings-title">A little personalization</h2><p>Fine-tune Mira’s conversational feel and keep a few useful details close.</p></div><button className="icon-button settings-close" type="button" aria-label="Close settings" onClick={() => setSettingsOpen(false)}>×</button></div>
-          <div className="settings-section">
-<div className="memory-library-heading"><div><span className="settings-label">LOCAL REPLY LIBRARY</span><p className="settings-help">Mira only uses dialogue you write. Triggers are matched on this phone without AI or internet access.</p></div><span className="memory-count">{characterSettings.replyRules.length} rules</span></div>
-<div className="memory-add-panel"><label className="memory-field-label" htmlFor="reply-triggers">TRIGGERS (COMMA SEPARATED)</label><input id="reply-triggers" className="memory-input" value={ruleTriggerDraft} maxLength={300} onChange={(event) => setRuleTriggerDraft(event.target.value)} placeholder="hello, hey, hi" /><label className="memory-field-label" htmlFor="reply-variations">MIRA’S REPLIES (ONE PER LINE)</label><textarea id="reply-variations" className="memory-input memory-draft" value={ruleRepliesDraft} maxLength={2000} onChange={(event) => setRuleRepliesDraft(event.target.value)} placeholder={"Hey, there you are 😊\nHi you. How’s your day?"} rows={4} /><button className="memory-add-button" type="button" onClick={addReplyRule} disabled={!ruleTriggerDraft.trim() || !ruleRepliesDraft.trim()}>＋ Add reply rule</button></div>
-<div className="memory-entry-list">{characterSettings.replyRules.map((rule) => <article className="memory-entry" key={rule.id}><div className="memory-entry-top"><strong>{rule.triggers.join(", ")}</strong><button className="memory-delete-button" type="button" onClick={() => deleteReplyRule(rule.id)} aria-label="Delete reply rule">×</button></div><label className="memory-field-label"><input type="checkbox" checked={rule.enabled} onChange={(event) => updateReplyRule(rule.id, { enabled: event.target.checked })} /> Enabled</label><input className="memory-input" value={rule.triggers.join(", ")} onChange={(event) => updateReplyRule(rule.id, { triggers: event.target.value.split(",").map((item) => item.trim()).filter(Boolean).slice(0,20) })} aria-label="Edit trigger phrases" /><textarea className="memory-entry-text" rows={Math.min(6, Math.max(2, rule.replies.length))} value={rule.replies.join("\n")} onChange={(event) => updateReplyRule(rule.id, { replies: event.target.value.split("\n").slice(0,20) })} aria-label={"Replies for " + rule.triggers.join(", ")} /></article>)}</div>
-<div className="memory-add-panel"><label className="memory-field-label" htmlFor="fallback-reply">DEFAULT REPLY WHEN NOTHING MATCHES</label><textarea id="fallback-reply" className="memory-input memory-draft" rows={3} maxLength={1000} value={characterSettings.fallbackReply} onChange={(event) => setCharacterSettings((current) => ({ ...current, fallbackReply: event.target.value }))} /></div>
-</div>
-<div className="settings-section"><span className="settings-label">CONVERSATION VIBE</span><div className="tone-options">
-            {([{ id: "balanced", title: "Balanced", detail: "Natural and nuanced" }, { id: "playful", title: "Playful", detail: "More wit and teasing" }, { id: "gentle", title: "Gentle", detail: "Softer and reassuring" }, { id: "direct", title: "Direct", detail: "Clear and candid" }] as const).map((tone) => <button key={tone.id} type="button" className={characterSettings.tone === tone.id ? "tone-option selected" : "tone-option"} aria-pressed={characterSettings.tone === tone.id} onClick={() => setCharacterSettings((current) => ({ ...current, tone: tone.id }))}><span className="tone-check">{characterSettings.tone === tone.id ? "✓" : ""}</span><strong>{tone.title}</strong><small>{tone.detail}</small></button>)}
-          </div></div>
-          <div className="settings-section emotional-state-section"><div className="memory-library-heading"><div><span className="settings-label">MIRA’S EMOTIONAL STATE</span><p className="settings-help">A lightweight continuity model, not a claim that feelings can be measured exactly. Values change gently from text cues and can be edited or reset by you.</p></div><span className="memory-count">{characterSettings.emotionalState.mood}</span></div>
-            <div className="emotion-mood-row"><label className="memory-field-label" htmlFor="emotion-mood">CURRENT TONE</label><select id="emotion-mood" className="memory-category-select" value={characterSettings.emotionalState.mood} onChange={(event) => setCharacterSettings((current) => ({ ...current, emotionalState: { ...current.emotionalState, mood: event.target.value as EmotionalMood, updatedAt: Date.now() } }))}>{EMOTIONAL_MOODS.map((mood) => <option key={mood} value={mood}>{mood.charAt(0).toUpperCase() + mood.slice(1)}</option>)}</select></div>
-            {([{ key: "energy", label: "Energy", hint: "How lively or worn down she feels" }, { key: "trust", label: "Trust", hint: "Earned through consistent interaction" }, { key: "closeness", label: "Closeness", hint: "Familiarity, not automatic romance" }, { key: "tension", label: "Lingering tension", hint: "Unresolved friction that may ease over time" }] as const).map((item) => <div className="emotion-meter" key={item.key}><div className="emotion-meter-heading"><label htmlFor={"emotion-" + item.key}>{item.label}</label><output>{characterSettings.emotionalState[item.key]}/100</output></div><input id={"emotion-" + item.key} type="range" min="0" max="100" value={characterSettings.emotionalState[item.key]} onChange={(event) => setCharacterSettings((current) => ({ ...current, emotionalState: { ...current.emotionalState, [item.key]: Number(event.target.value), updatedAt: Date.now() } }))} /><small>{item.hint}</small></div>)}
-            <div className="emotion-state-footer"><span>Saved locally on this device</span><button type="button" className="memory-suggestion-dismiss" onClick={() => setCharacterSettings((current) => ({ ...current, emotionalState: { ...DEFAULT_EMOTIONAL_STATE, updatedAt: Date.now() } }))}>Reset state</button></div></div>
-          <div className="settings-section"><div className="memory-library-heading"><div><span className="settings-label">MIRA’S MEMORY LIBRARY</span><p className="settings-help">Organize the details that should carry between chats. You can edit, recategorize, or remove any note.</p></div><span className="memory-count">{characterSettings.memory.length}/1600</span></div>
-            <div className="memory-add-panel"><label className="memory-field-label" htmlFor="memory-category">CATEGORY</label><select id="memory-category" className="memory-category-select" value={memoryCategory} onChange={(event) => setMemoryCategory(event.target.value as MemoryCategory)}>{MEMORY_CATEGORIES.map((category) => <option key={category} value={category}>{category}</option>)}</select><label className="memory-field-label" htmlFor="memory-draft">NEW NOTE</label><textarea id="memory-draft" className="memory-input memory-draft" value={memoryDraft} maxLength={500} onChange={(event) => setMemoryDraft(event.target.value)} placeholder="A preference, ongoing story detail, important person, or milestone..." rows={2} /><button className="memory-add-button" type="button" onClick={addMemoryEntry} disabled={!memoryDraft.trim() || characterSettings.memory.length >= 1600}>＋ Add to memory</button></div>
-            <div className="memory-filter-row"><label className="memory-field-label" htmlFor="memory-filter">SAVED NOTES</label><select id="memory-filter" className="memory-category-select memory-filter-select" value={memoryFilter} onChange={(event) => setMemoryFilter(event.target.value)}><option value="All">All categories</option>{MEMORY_CATEGORIES.map((category) => <option key={category} value={category}>{category}</option>)}</select></div>
-            <div className="memory-entry-list">{parseMemoryEntries(characterSettings.memory).filter((entry) => memoryFilter === "All" || entry.category === memoryFilter).map((entry) => <article className="memory-entry" key={entry.index}><div className="memory-entry-top"><span className={`memory-category-tag category-${entry.category.toLowerCase()}`}>{entry.category}</span><button className="memory-delete-button" type="button" onClick={() => deleteMemoryEntry(entry.index)} aria-label={`Remove memory note: ${entry.text.slice(0, 48)}`} title="Remove note">×</button></div><select className="memory-category-select entry-category-select" aria-label={`Category for memory note: ${entry.text.slice(0, 48)}`} value={entry.category} onChange={(event) => updateMemoryEntry(entry.index, event.target.value as MemoryCategory, entry.text)}>{MEMORY_CATEGORIES.map((category) => <option key={category} value={category}>{category}</option>)}</select><textarea className="memory-entry-text" aria-label={`Edit memory note: ${entry.text.slice(0, 48)}`} value={entry.text} rows={2} maxLength={500} onChange={(event) => updateMemoryEntry(entry.index, entry.category, event.target.value)} /></article>)}
-              {parseMemoryEntries(characterSettings.memory).filter((entry) => memoryFilter === "All" || entry.category === memoryFilter).length === 0 && <div className="memory-empty"><span>✳</span><strong>No notes here yet</strong><small>Add one above, or save a chat message with Remember.</small></div>}</div>
-            <div className="memory-footer"><span>Shared across chats · saved in this browser</span><span>{parseMemoryEntries(characterSettings.memory).length} notes</span></div></div>
-          <div className="settings-section"><div className="memory-library-heading"><div><span className="settings-label">EMOTIONAL CONTINUITY JOURNAL</span><p className="settings-help">Keep the thread between conversations: feelings that matter, unfinished conversations, promises, and meaningful moments. You decide what belongs here.</p></div><span className="memory-count">{characterSettings.continuity.length}/12</span></div>
-            <div className="continuity-add-panel"><label className="memory-field-label" htmlFor="continuity-kind">MOMENT TYPE</label><select id="continuity-kind" className="memory-category-select" value={continuityKind} onChange={(event) => setContinuityKind(event.target.value as ContinuityKind)}>{CONTINUITY_KINDS.map((kind) => <option key={kind} value={kind}>{kind}</option>)}</select><label className="memory-field-label" htmlFor="continuity-draft">WHAT SHOULD CARRY FORWARD?</label><textarea id="continuity-draft" className="memory-input continuity-draft" value={continuityDraft} maxLength={220} onChange={(event) => setContinuityDraft(event.target.value)} placeholder="Example: We left off after a difficult conversation about trust. Mira apologized, but we have not fully resolved it." rows={3} /><div className="continuity-footer"><span>{continuityDraft.length}/220 characters</span><button className="memory-add-button" type="button" onClick={addContinuityEntry} disabled={!continuityDraft.trim() || characterSettings.continuity.length >= 12}>＋ Keep this thread</button></div></div>
-            <div className="continuity-entry-list">{characterSettings.continuity.slice().reverse().map((entry) => <article className="continuity-entry" key={entry.id}><div className="memory-entry-top"><span className={"continuity-kind-tag continuity-" + entry.kind.toLowerCase().replace(/\s+/g, "-")}>{entry.kind}</span><button className="memory-delete-button" type="button" onClick={() => deleteContinuityEntry(entry.id)} aria-label={"Remove continuity note: " + entry.text.slice(0, 48)} title="Remove note">×</button></div><p>{entry.text}</p><small>{new Date(entry.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</small></article>)}
-              {characterSettings.continuity.length === 0 && <div className="memory-empty"><span>♡</span><strong>The story is still unfolding</strong><small>Add a meaningful moment, an unfinished thread, or a promise you want Mira to keep in mind.</small></div>}</div>
-            <div className="memory-footer"><span>Shared across chats · saved in this browser</span><span>{characterSettings.continuity.length} journal notes</span></div></div>
-          <div className="settings-privacy"><span>✳</span><p>All character settings, replies, and conversations stay in this browser’s local storage. They are not synced or encrypted.</p></div>
-          <button className="settings-done" type="button" onClick={() => setSettingsOpen(false)}>Save preferences <span>↗</span></button>
-        </section>
-      </div>}
-    </main>
-  );
+    </div>
+    <nav className="mobile-nav">{nav.map(([label,icon])=><button key={label} className={tab===label?"mobile-nav-item active":"mobile-nav-item"} onClick={()=>{setTab(label);setActiveProfileId("");}}><span>{icon}</span><small>{label}</small></button>)}<button className={tab==="Settings"?"mobile-nav-item active":"mobile-nav-item"} onClick={()=>setTab("Settings")}><span>⚙</span><small>Settings</small></button></nav>
+    {showEditor&&<div className="modal-backdrop" onClick={()=>setShowEditor(false)}><form className="profile-modal" onSubmit={saveProfile} onClick={e=>e.stopPropagation()}><div className="modal-heading"><div><span className="eyebrow">LOCAL PROFILE LIBRARY</span><h2>{editingId?"Edit profile":"Add a profile"}</h2></div><button type="button" className="icon-button" onClick={()=>setShowEditor(false)}>×</button></div><label className="field-label">Profile type</label><div className="type-switch"><button type="button" className={form.kind==="fictional"?"selected":""} onClick={()=>setForm(f=>({...f,kind:"fictional"}))}>✧ Fictional character</button><button type="button" className={form.kind==="real"?"selected":""} onClick={()=>setForm(f=>({...f,kind:"real"}))}>◉ Real-person record</button></div><label className="field-label">Name</label><input className="text-field" required value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} placeholder="Name"/><div className="two-fields"><div><label className="field-label">Age (18+)</label><input className="text-field" type="number" min="18" max="99" value={form.age} onChange={e=>setForm(f=>({...f,age:e.target.value}))}/></div><div><label className="field-label">City</label><input className="text-field" value={form.city} onChange={e=>setForm(f=>({...f,city:e.target.value}))} placeholder="City, country"/></div></div><label className="field-label">About</label><textarea className="text-field" rows={3} value={form.bio} onChange={e=>setForm(f=>({...f,bio:e.target.value}))} placeholder="A few words about this profile..."/><label className="field-label">Looking for</label><select value={form.intent} onChange={e=>setForm(f=>({...f,intent:e.target.value}))}><option>Long-term</option><option>See where it goes</option><option>Friendship first</option></select><label className="field-label">Interests</label><div className="chips">{INTERESTS.map(x=><button type="button" key={x} className={form.interests.includes(x)?"chip selected":"chip"} onClick={()=>toggleInterest(x)}>{x}</button>)}</div>{form.kind==="real"&&<p className="form-disclaimer">Only add real-person details you have permission to store. This creates a private local record, not an account or a live connection to that person.</p>}{form.kind==="fictional"&&<p className="form-disclaimer">Fictional profiles use editable, predefined local dialogue rules. No AI is involved.</p>}<button className="primary-button full-button" type="submit">Save profile</button></form></div>}
+    {toast&&<div className="toast">{toast}</div>}
+    <footer className="app-footer">A PRIVATE LITTLE WORLD · BUILT FOR OFFLINE CONNECTIONS</footer>
+  </main>;
 }
+
+function Avatar({profile}:{profile:DatingProfile}){return <span className={"mini-avatar avatar-"+profile.palette} style={{background:profilePalettes[profile.palette]||profilePalettes.rose}}>{profile.initials}</span>}
+function ProfileTile({profile,score,onEdit,onOpen}:{profile:DatingProfile;score:number;onEdit:()=>void;onOpen:()=>void}){return <article className="mini-profile"><div className={"mini-portrait portrait-"+profile.palette} style={{background:profilePalettes[profile.palette]||profilePalettes.rose}}><span>{profile.initials}</span><small>{profile.kind==="fictional"?"FICTIONAL":"MEMBER RECORD"}</small></div><div className="mini-profile-info"><strong>{profile.name}, {profile.age}</strong><small>{profile.city}</small><div className="mini-actions"><button onClick={onOpen}>Message</button><button onClick={onEdit}>Edit</button></div></div></article>}
+function Empty({title,body}:{title:string;body:string}){return <div className="empty-state compact"><div className="empty-heart">♡</div><h2>{title}</h2><p>{body}</p></div>}
