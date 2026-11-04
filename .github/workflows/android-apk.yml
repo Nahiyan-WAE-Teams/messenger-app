@@ -5,6 +5,11 @@ on:
     branches: [main]
     paths:
       - "android/**"
+      - "app/**"
+      - "lib/**"
+      - "package.json"
+      - "README.md"
+      - "termux-setup.sh"
       - ".github/workflows/android-apk.yml"
   workflow_dispatch:
 
