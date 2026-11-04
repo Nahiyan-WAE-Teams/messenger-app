@@ -471,7 +471,7 @@ export default function Home() {
             <div className="continuity-entry-list">{characterSettings.continuity.slice().reverse().map((entry) => <article className="continuity-entry" key={entry.id}><div className="memory-entry-top"><span className={"continuity-kind-tag continuity-" + entry.kind.toLowerCase().replace(/\s+/g, "-")}>{entry.kind}</span><button className="memory-delete-button" type="button" onClick={() => deleteContinuityEntry(entry.id)} aria-label={"Remove continuity note: " + entry.text.slice(0, 48)} title="Remove note">×</button></div><p>{entry.text}</p><small>{new Date(entry.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</small></article>)}
               {characterSettings.continuity.length === 0 && <div className="memory-empty"><span>♡</span><strong>The story is still unfolding</strong><small>Add a meaningful moment, an unfinished thread, or a promise you want Mira to keep in mind.</small></div>}</div>
             <div className="memory-footer"><span>Shared across chats · saved in this browser</span><span>{characterSettings.continuity.length} journal notes</span></div></div>
-          <div className="settings-privacy"><span>✳</span><p>Memory and continuity notes are stored in this browser and sent with chat requests so the AI can use them. They are editable reference notes, not a secure vault.</p></div>
+          <div className="settings-privacy"><span>✳</span><p>All character settings, replies, and conversations stay in this browser’s local storage. They are not synced or encrypted.</p></div>
           <button className="settings-done" type="button" onClick={() => setSettingsOpen(false)}>Save preferences <span>↗</span></button>
         </section>
       </div>}
