@@ -189,3 +189,13 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 
 .field-hint{font-weight:400;color:#a0948b;letter-spacing:0;text-transform:none;margin-left:6px}
 .profile-detail-line{margin:11px 0 0;color:#8a716e;font-size:10px;line-height:1.6;letter-spacing:.15px}
+
+/* Solid portrait palette: quiet color fields, never synthetic gradient chrome */
+.portrait-rose,.mini-portrait.portrait-rose,.avatar-rose{background:#b98e88!important}
+.portrait-sage,.mini-portrait.portrait-sage,.avatar-sage{background:#9aa391!important}
+.portrait-blue,.mini-portrait.portrait-blue,.avatar-blue{background:#8799a7!important}
+.portrait-plum,.mini-portrait.portrait-plum,.avatar-plum{background:#96818e!important}
+.portrait-gold,.mini-portrait.portrait-gold,.avatar-gold{background:#b49b72!important}
+.portrait-coral,.mini-portrait.portrait-coral,.avatar-coral{background:#bd8c78!important}
+.portrait-lavender,.mini-portrait.portrait-lavender,.avatar-lavender{background:#9c96ad!important}
+.portrait-sunset,.mini-portrait.portrait-sunset,.avatar-sunset{background:#a97776!important}
