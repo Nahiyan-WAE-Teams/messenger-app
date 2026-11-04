@@ -228,7 +228,7 @@ export default function Home() {
     setInput(""); setBusy(true); setNotice("");
     const reply = chooseLocalReply(content, characterSettings.replyRules, characterSettings.fallbackReply);
     window.setTimeout(() => {
-      setConversations((current) => current.map((conversation) => conversation.id === conversationId ? { ...conversation, updatedAt: Date.now(), messages: [...conversation.messages, { id: crypto.randomUUID(), role: "assistant", content: reply, time: Date.now() }].slice(-200) } : conversation));
+      setConversations((current) => current.map((conversation) => conversation.id === conversationId ? { ...conversation, updatedAt: Date.now(), messages: [...conversation.messages, { id: crypto.randomUUID(), role: "assistant" as const, content: reply, time: Date.now() }].slice(-200) } : conversation));
       setBusy(false); inputRef.current?.focus();
     }, 300);
   }
