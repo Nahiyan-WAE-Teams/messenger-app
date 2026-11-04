@@ -32,7 +32,7 @@ const INTERESTS = ["Art","Books","Coffee","Cooking","Concerts","Dogs","Fashion",
 const profilePalettes: Record<string,string> = {rose:"linear-gradient(145deg,#f4c9c6,#a65f73)",sage:"linear-gradient(145deg,#d4e1c9,#64816e)",blue:"linear-gradient(145deg,#c4d9e8,#627e9d)",plum:"linear-gradient(145deg,#dec5e6,#785b8f)",gold:"linear-gradient(145deg,#f1d9a6,#a77b42)",coral:"linear-gradient(145deg,#f2c1a8,#b86b58)",lavender:"linear-gradient(145deg,#d7d0f4,#7771a5)",sunset:"linear-gradient(145deg,#f4b9a3,#9a5364)"};
 const uid = () => Math.random().toString(36).slice(2,10);
 const time = (value:number) => new Intl.DateTimeFormat(undefined,{hour:"numeric",minute:"2-digit"}).format(value);\nconst rulesToText = (profile?:DatingProfile) => (profile?.rules??[]).map(rule=>rule.triggers.join(", ")+" | "+rule.replies.join("; ")).join("\n");
-const parseDialogueRules = (value:string) => value.split(/\\r?\\n/).map(line=>{const parts=line.split("|");return {triggers:(parts[0]??"").split(",").map(x=>x.trim()).filter(Boolean),replies:(parts.slice(1).join("|")??"").split(";").map(x=>x.trim()).filter(Boolean),enabled:true};}).filter(rule=>rule.triggers.length&&rule.replies.length);
+const parseDialogueRules = (value:string) => value.split(/\r?\n/).map(line=>{const parts=line.split("|");return {triggers:(parts[0]??"").split(",").map(x=>x.trim()).filter(Boolean),replies:(parts.slice(1).join("|")??"").split(";").map(x=>x.trim()).filter(Boolean),enabled:true};}).filter(rule=>rule.triggers.length&&rule.replies.length);
 
 export default function Home() {
   const [profiles,setProfiles] = useState<DatingProfile[]>(STARTER_PROFILES);
