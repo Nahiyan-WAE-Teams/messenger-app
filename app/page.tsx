@@ -119,7 +119,7 @@ export default function Home() {
     setActiveProfileId("");sayToast("Profile blocked on this device");
   }
   const nav=[["Discover","✦"],["Likes","♡"],["Matches","♥"],["Messages","▤"],["Profile","◉"]];
-  if(!ready)return <main className="boot-screen"><div className="boot-logo">♡</div><span>LOVEBIRD</span></main>;
+  if(!ready)return <main className="boot-screen"><div className="boot-logo">♡</div><span>LOVELY</span></main>;
 
   return <main className="dating-app">
     <header className="topbar"><button className="wordmark" onClick={()=>setTab("Discover")}><span className="logo-mark">♡</span><span>lovely<span className="logo-dot">.</span><small>YOUR OFFLINE DATING WORLD</small></span></button><div className="top-actions"><span className="offline-pill"><i/> Offline mode</span><button className="icon-button" aria-label="Settings" onClick={()=>setTab("Settings")}>⚙</button></div></header>
