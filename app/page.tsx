@@ -105,7 +105,8 @@ export default function Home() {
     setState(old=>({...old,chats:old.chats.map(c=>c.profileId===activeChat.id?{...c,messages:[...c.messages,userMsg]}:c)}));
     setChatInput("");
     if(activeChat.kind==="fictional"){
-      const stage=getRelationshipStage(state.relationships?.[activeChat.id]); const recentReplies=activeChat.messages.filter(message=>message.sender==="them").map(message=>message.text); const recentUserMessages=activeChat.messages.filter(message=>message.sender==="me").map(message=>message.text); const reply=chooseProfileReply(text,activeChat.rules,activeChat.fallback,stage,recentReplies,recentUserMessages);
+      const conversationMessages=chat?.messages??[];
+      const stage=getRelationshipStage(state.relationships?.[activeChat.id]); const recentReplies=conversationMessages.filter(message=>message.sender==="them").map(message=>message.text); const recentUserMessages=conversationMessages.filter(message=>message.sender==="me").map(message=>message.text); const reply=chooseProfileReply(text,activeChat.rules,activeChat.fallback,stage,recentReplies,recentUserMessages);
       window.setTimeout(()=>setState(old=>({...old,relationships:recordRelationshipExchange(old.relationships,activeChat,Date.now()),chats:old.chats.map(c=>c.profileId===activeChat.id?{...c,messages:[...c.messages,{id:uid(),sender:"them",text:reply,time:Date.now()}]}:c)})),650);
     }
   }
