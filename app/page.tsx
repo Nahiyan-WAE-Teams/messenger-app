@@ -33,8 +33,8 @@ const INTERESTS = ["Art","Books","Coffee","Cooking","Concerts","Dogs","Fashion",
 const PROFILE_PALETTES = ["rose","sage","blue","plum","gold","coral","lavender","sunset"];
 const uid = () => Math.random().toString(36).slice(2,10);
 const time = (value:number) => new Intl.DateTimeFormat(undefined,{hour:"numeric",minute:"2-digit"}).format(value);
-const rulesToText = (profile?:DatingProfile) => (profile?.rules??[]).map(rule=>(rule.stage?"["+rule.stage+"] ":"")+rule.triggers.join(", ")+" | "+rule.replies.join("; ")).join("\\n");
-const parseDialogueRules = (value:string) => value.split(/\\r?\\n/).map(line=>{const parts=line.split("|");const left=(parts[0]??"").trim();const stageMatch=left.match(/^\\[(first-meeting|getting-to-know|familiar|close)\\]\\s*/);const triggerText=stageMatch?left.slice(stageMatch[0].length):left;return {stage:stageMatch?.[1],triggers:triggerText.split(",").map(x=>x.trim()).filter(Boolean),replies:(parts.slice(1).join("|")??"").split(";").map(x=>x.trim()).filter(Boolean),enabled:true};}).filter(rule=>rule.triggers.length&&rule.replies.length);
+const rulesToText = (profile?:DatingProfile) => (profile?.rules??[]).map(rule=>(rule.stage?"["+rule.stage+"] ":"")+rule.triggers.join(", ")+" | "+rule.replies.join("; ")).join("\n");
+const parseDialogueRules = (value:string) => value.split(/\r?\n/).map(line=>{const parts=line.split("|");const left=(parts[0]??"").trim();const stageMatch=left.match(/^\[(first-meeting|getting-to-know|familiar|close)\]\s*/);const triggerText=stageMatch?left.slice(stageMatch[0].length):left;return {stage:stageMatch?.[1],triggers:triggerText.split(",").map(x=>x.trim()).filter(Boolean),replies:(parts.slice(1).join("|")??"").split(";").map(x=>x.trim()).filter(Boolean),enabled:true};}).filter(rule=>rule.triggers.length&&rule.replies.length);
 
 export default function Home() {
   const [profiles,setProfiles] = useState<DatingProfile[]>(STARTER_PROFILES);
