@@ -186,3 +186,6 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 }
 @media(max-width:380px){.dating-app{padding-left:11px;padding-right:11px}.section-heading h1{font-size:35px}.profile-grid{gap:8px}.mini-portrait{height:126px}.mini-profile-info>strong{font-size:12px}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;scroll-behavior:auto!important;transition-duration:.01ms!important}}
+
+.field-hint{font-weight:400;color:#a0948b;letter-spacing:0;text-transform:none;margin-left:6px}
+.profile-detail-line{margin:11px 0 0;color:#8a716e;font-size:10px;line-height:1.6;letter-spacing:.15px}
