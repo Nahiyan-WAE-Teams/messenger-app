@@ -46,7 +46,8 @@ export default function Home() {
   const [interestFilter,setInterestFilter] = useState<string[]>([]);
   const [showEditor,setShowEditor] = useState(false);
   const [editingId,setEditingId] = useState("");
-  const [form,setForm] = useState({name:"",age:"25",city:"",bio:"",intent:"Long-term",kind:"fictional" as "fictional"|"real",interests:[] as string[],photo:""});\n  const touchStart = useRef<number | null>(null);
+  const [form,setForm] = useState({name:"",age:"25",city:"",bio:"",intent:"Long-term",kind:"fictional" as "fictional"|"real",interests:[] as string[],photo:""});
+  const touchStart = useRef<number | null>(null);
   const [chatInput,setChatInput] = useState("");
   const [showFilters,setShowFilters] = useState(false);
   const [ownName,setOwnName] = useState("Your name");
