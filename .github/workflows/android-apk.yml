@@ -9,9 +9,12 @@ on:
       - "lib/**"
       - "package.json"
       - "next.config.mjs"
-      - "README.md"
       - ".github/workflows/android-apk.yml"
   workflow_dispatch:
+
+concurrency:
+  group: lovely-offline-dating-apk-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
