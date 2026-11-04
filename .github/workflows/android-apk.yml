@@ -18,32 +18,12 @@ concurrency:
 
 permissions:
   contents: read
-  actions: write
 
 jobs:
   build-apk:
     name: Build standalone offline APK
     runs-on: ubuntu-latest
     steps:
-      - name: Cancel obsolete queued APK builds
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const { owner, repo } = context.repo;
-            const runs = await github.paginate(
-              github.rest.actions.listWorkflowRuns,
-              { owner, repo, workflow_id: "android-apk.yml", branch: "main", per_page: 100 }
-            );
-            const obsolete = runs.filter(run =>
-              run.id !== context.runId &&
-              ["queued", "in_progress"].includes(run.status)
-            );
-            for (const run of obsolete) {
-              core.info(`Cancelling obsolete run ${run.id} (${run.status})`);
-              await github.rest.actions.cancelWorkflowRun({ owner, repo, run_id: run.id });
-            }
-            core.info(`Cancelled ${obsolete.length} obsolete APK run(s).`);
-
       - name: Check out repository
         uses: actions/checkout@v4
 
