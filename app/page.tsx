@@ -105,7 +105,7 @@ export default function Home() {
     setState(old=>({...old,chats:old.chats.map(c=>c.profileId===activeChat.id?{...c,messages:[...c.messages,userMsg]}:c)}));
     setChatInput("");
     if(activeChat.kind==="fictional"){
-      const stage=getRelationshipStage(state.relationships?.[activeChat.id]); const reply=chooseProfileReply(text,activeChat.rules,activeChat.fallback,stage);
+      const stage=getRelationshipStage(state.relationships?.[activeChat.id]); const recentReplies=activeChat.messages.filter(message=>message.sender==="them").map(message=>message.text); const reply=chooseProfileReply(text,activeChat.rules,activeChat.fallback,stage,recentReplies);
       window.setTimeout(()=>setState(old=>({...old,relationships:recordRelationshipExchange(old.relationships,activeChat,Date.now()),chats:old.chats.map(c=>c.profileId===activeChat.id?{...c,messages:[...c.messages,{id:uid(),sender:"them",text:reply,time:Date.now()}]}:c)})),650);
     }
   }
