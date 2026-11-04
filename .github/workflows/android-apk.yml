@@ -8,8 +8,8 @@ on:
       - "app/**"
       - "lib/**"
       - "package.json"
+      - "next.config.mjs"
       - "README.md"
-      - "termux-setup.sh"
       - ".github/workflows/android-apk.yml"
   workflow_dispatch:
 
@@ -18,7 +18,7 @@ permissions:
 
 jobs:
   build-apk:
-    name: Build debug APK
+    name: Build standalone offline APK
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -35,8 +35,16 @@ jobs:
       - name: Test local reply engine
         run: npm test
 
-      - name: Build offline web app
+      - name: Export static offline app
         run: npm run build
+
+      - name: Verify and bundle web app into Android assets
+        run: |
+          test -f out/index.html
+          mkdir -p android/app/src/main/assets/assets
+          cp -R out/. android/app/src/main/assets/assets/
+          test -f android/app/src/main/assets/assets/index.html
+          test -d android/app/src/main/assets/assets/_next
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -54,14 +62,14 @@ jobs:
         with:
           gradle-version: "8.9"
 
-      - name: Build installable debug APK
+      - name: Build installable standalone APK
         working-directory: android
         run: gradle --no-daemon assembleDebug
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: mira-messenger-debug-apk
+          name: mira-messenger-standalone-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
