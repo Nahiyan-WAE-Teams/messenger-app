@@ -138,6 +138,7 @@ export default function Home() {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [characterSettings, setCharacterSettings] = useState<CharacterSettings>(DEFAULT_SETTINGS);
   const [memoryDraft, setMemoryDraft] = useState("");
   const [memoryCategory, setMemoryCategory] = useState<MemoryCategory>("Preferences");
@@ -390,13 +391,14 @@ export default function Home() {
     <main className="app-shell">
       <div className="ambient ambient-one" aria-hidden="true" />
       <div className="ambient ambient-two" aria-hidden="true" />
-      <aside className="sidebar">
+      <aside className={`sidebar ${sidebarOpen ? "sidebar-open" : ""}`}>
+        <button className="mobile-sidebar-close" type="button" aria-label="Close conversations" onClick={() => setSidebarOpen(false)}>×</button>
         <a className="brand" href="#" aria-label="Mira home"><span className="brand-mark"><span>m</span><i>✳</i></span><span className="brand-wordmark">mira<span className="brand-period">.</span><small>YOUR PRIVATE UNIVERSE</small></span></a>
         <button className="new-chat" onClick={createConversation} type="button" disabled={busy}><span className="plus-icon">＋</span> New conversation <kbd>⌘ K</kbd></button>
         <div className="side-label">YOUR SPACE</div>
         <div className="conversation-list" aria-label="Saved conversations">
           {conversations.map((conversation) => <div className={`conversation-item ${conversation.id === activeConversationId ? "active" : ""}`} key={conversation.id}>
-            <button className={`chat-link ${conversation.id === activeConversationId ? "active" : ""}`} type="button" onClick={() => { if (!busy) { setActiveConversationId(conversation.id); setNotice(""); } }} disabled={busy} title={conversation.title}>
+            <button className={`chat-link ${conversation.id === activeConversationId ? "active" : ""}`} type="button" onClick={() => { if (!busy) { setActiveConversationId(conversation.id); setNotice(""); setSidebarOpen(false); } }} disabled={busy} title={conversation.title}>
               <span className="tiny-avatar"><span>M</span><i /></span>
               <span className="chat-link-copy"><strong>{conversation.title || "New conversation"}</strong><small>{new Date(conversation.updatedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })} · {conversation.messages.length} messages</small></span>
             </button>
@@ -413,11 +415,12 @@ export default function Home() {
         <div className="sidebar-bottom"><span className="secure-icon">✳</span><span><strong>Private by design</strong><small>Stored on this device</small></span><span className="status-dot" /></div>
       </aside>
 
+      {sidebarOpen && <button className="mobile-sidebar-scrim" type="button" aria-label="Close conversations" onClick={() => setSidebarOpen(false)} />}
       <section className="chat-panel">
         <header className="chat-header">
           <div className="profile-avatar" aria-hidden="true"><span>M</span><i /></div>
           <div className="profile-copy"><h1>Mira Bennett <span className="verified-mark">✦</span></h1><p><span className="online-dot" /> Your offline character <span className="header-dot">·</span> ready when you are</p></div>
-          <div className="header-actions"><span className="encrypted-pill"><span /> PRIVATE CHAT</span><button className="icon-button new-chat-mobile" type="button" aria-label="New conversation" title="New conversation" onClick={createConversation} disabled={busy}>＋</button><button className="icon-button settings-trigger" type="button" aria-label="Open character settings" title="Character settings" onClick={() => setSettingsOpen(true)}><span>⚙</span></button><button className="icon-button" type="button" aria-label="Clear current conversation" title="Clear current conversation" onClick={clearChat}><span>↻</span></button></div>
+          <div className="header-actions"><button className="icon-button mobile-menu-trigger" type="button" aria-label="Open conversations" title="Conversations" onClick={() => setSidebarOpen(true)}>☰</button><span className="encrypted-pill"><span /> PRIVATE CHAT</span><button className="icon-button new-chat-mobile" type="button" aria-label="New conversation" title="New conversation" onClick={createConversation} disabled={busy}>＋</button><button className="icon-button settings-trigger" type="button" aria-label="Open character settings" title="Character settings" onClick={() => setSettingsOpen(true)}><span>⚙</span></button><button className="icon-button" type="button" aria-label="Clear current conversation" title="Clear current conversation" onClick={clearChat}><span>↻</span></button></div>
         </header>
 
         <div className="messages-area">
