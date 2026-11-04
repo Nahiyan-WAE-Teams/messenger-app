@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useRef, useState } from "react";
+import { chooseLocalReply } from "../lib/reply-engine.js";
 
 type MemorySuggestion = { category: MemoryCategory; text: string; status: "pending" | "saved" | "dismissed" };
 type Message = { id: string; role: "user" | "assistant"; content: string; time: number; memorySuggestion?: MemorySuggestion };
@@ -13,9 +14,12 @@ type ContinuityKind = "Emotional context" | "Unresolved" | "Promise" | "Mileston
 type ContinuityEntry = { id: string; kind: ContinuityKind; text: string; createdAt: number };
 type EmotionalMood = "neutral" | "warm" | "playful" | "reflective" | "hurt" | "tired";
 type EmotionalState = { mood: EmotionalMood; energy: number; trust: number; closeness: number; tension: number; updatedAt: number };
-type CharacterSettings = { tone: CharacterTone; memory: string; continuity: ContinuityEntry[]; emotionalState: EmotionalState };
+type ReplyRule = { id: string; triggers: string[]; replies: string[]; enabled: boolean };
+type CharacterSettings = { tone: CharacterTone; memory: string; continuity: ContinuityEntry[]; emotionalState: EmotionalState; replyRules: ReplyRule[]; fallbackReply: string };
 const DEFAULT_EMOTIONAL_STATE: EmotionalState = { mood: "neutral", energy: 68, trust: 50, closeness: 25, tension: 10, updatedAt: Date.now() };
-const DEFAULT_SETTINGS: CharacterSettings = { tone: "balanced", memory: "", continuity: [], emotionalState: DEFAULT_EMOTIONAL_STATE };
+const DEFAULT_RULES: ReplyRule[] = [{ id: "hello", triggers: ["hello", "hi", "hey"], replies: ["Hey. There you are 😊", "Hi you. How’s your day going?"], enabled: true }, { id: "morning", triggers: ["good morning", "morning"], replies: ["Morning ☀️ Did you sleep okay?"], enabled: true }, { id: "night", triggers: ["good night", "gn"], replies: ["Good night. Get some proper rest, okay? 🌙"], enabled: true }, { id: "miss", triggers: ["i miss you", "missed you"], replies: ["You were gone for a bit. I’m glad you’re here now. 💗"], enabled: true }];
+const DEFAULT_FALLBACK = "I don’t have a written reply for that yet. Add one in my Reply Library. 💗";
+const DEFAULT_SETTINGS: CharacterSettings = { tone: "balanced", memory: "", continuity: [], emotionalState: DEFAULT_EMOTIONAL_STATE, replyRules: DEFAULT_RULES, fallbackReply: DEFAULT_FALLBACK };
 const CONTINUITY_KINDS: ContinuityKind[] = ["Emotional context", "Unresolved", "Promise", "Milestone"];
 const EMOTIONAL_MOODS: EmotionalMood[] = ["neutral", "warm", "playful", "reflective", "hurt", "tired"];
 
@@ -140,6 +144,8 @@ export default function Home() {
   const [memoryFilter, setMemoryFilter] = useState("All");
   const [continuityDraft, setContinuityDraft] = useState("");
   const [continuityKind, setContinuityKind] = useState<ContinuityKind>("Emotional context");
+  const [ruleTriggerDraft, setRuleTriggerDraft] = useState("");
+  const [ruleRepliesDraft, setRuleRepliesDraft] = useState("");
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -162,7 +168,7 @@ export default function Home() {
             tension: Number.isFinite(savedState.tension) ? Math.max(0, Math.min(100, savedState.tension)) : 10,
             updatedAt: Number.isFinite(savedState.updatedAt) ? savedState.updatedAt : Date.now(),
           };
-          setCharacterSettings({ tone: parsedSettings.tone, memory: parsedSettings.memory.slice(0, 1600), continuity: savedContinuity, emotionalState: safeState });
+          setCharacterSettings({ tone: parsedSettings.tone, memory: parsedSettings.memory.slice(0, 1600), continuity: savedContinuity, emotionalState: safeState, replyRules: Array.isArray(parsedSettings.replyRules) ? parsedSettings.replyRules.filter((rule: ReplyRule) => rule && typeof rule.id === "string" && Array.isArray(rule.triggers) && Array.isArray(rule.replies)).slice(0, 300) : DEFAULT_RULES, fallbackReply: typeof parsedSettings.fallbackReply === "string" ? parsedSettings.fallbackReply.slice(0, 1000) : DEFAULT_FALLBACK });
         }
       }
       const savedConversations = localStorage.getItem(CONVERSATIONS_KEY);
@@ -214,31 +220,34 @@ export default function Home() {
     if (!content || busy || !activeConversation) return;
     const conversationId = activeConversation.id;
     const nextEmotionalState = evolveEmotionalState(characterSettings.emotionalState, content);
-    const requestSettings = { ...characterSettings, emotionalState: nextEmotionalState };
-    setCharacterSettings(requestSettings);
+    setCharacterSettings((current) => ({ ...current, emotionalState: nextEmotionalState }));
     const userMessage: Message = { id: crypto.randomUUID(), role: "user", content, time: Date.now(), memorySuggestion: suggestMemoryFromMessage(content) };
     const next = [...activeConversation.messages, userMessage].slice(-200);
-    const title = activeConversation.messages.some((message) => message.role === "user")
-      ? activeConversation.title
-      : content.slice(0, 36) + (content.length > 36 ? "…" : "");
-    setConversations((current) => current.map((conversation) => conversation.id === conversationId
-      ? { ...conversation, title, updatedAt: Date.now(), messages: next } : conversation));
+    const title = activeConversation.messages.some((message) => message.role === "user") ? activeConversation.title : content.slice(0, 36) + (content.length > 36 ? "…" : "");
+    setConversations((current) => current.map((conversation) => conversation.id === conversationId ? { ...conversation, title, updatedAt: Date.now(), messages: next } : conversation));
     setInput(""); setBusy(true); setNotice("");
-    try {
-      const response = await fetch("/api/chat", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: next.filter((m) => m.id !== "welcome").map(({ role, content }) => ({ role, content })).slice(-30), characterSettings: requestSettings }),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data?.error || "Something went wrong.");
-      setConversations((current) => current.map((conversation) => conversation.id === conversationId
-        ? { ...conversation, updatedAt: Date.now(), messages: [...conversation.messages, { id: crypto.randomUUID(), role: "assistant", content: data.reply, time: Date.now() }].slice(-200) }
-        : conversation));
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Couldn't send that message.");
-    } finally { setBusy(false); inputRef.current?.focus(); }
+    const reply = chooseLocalReply(content, characterSettings.replyRules, characterSettings.fallbackReply);
+    window.setTimeout(() => {
+      setConversations((current) => current.map((conversation) => conversation.id === conversationId ? { ...conversation, updatedAt: Date.now(), messages: [...conversation.messages, { id: crypto.randomUUID(), role: "assistant", content: reply, time: Date.now() }].slice(-200) } : conversation));
+      setBusy(false); inputRef.current?.focus();
+    }, 300);
   }
 
+  function addReplyRule() {
+    const triggers = ruleTriggerDraft.split(",").map((item) => item.trim()).filter(Boolean).slice(0, 20);
+    const replies = ruleRepliesDraft.split("\n").map((item) => item.trim()).filter(Boolean).slice(0, 20);
+    if (!triggers.length || !replies.length) { setNotice("Add at least one trigger and one reply."); return; }
+    setCharacterSettings((current) => ({ ...current, replyRules: [...current.replyRules, { id: crypto.randomUUID(), triggers, replies, enabled: true }].slice(-300) }));
+    setRuleTriggerDraft(""); setRuleRepliesDraft(""); setNotice("Added to Mira’s local Reply Library.");
+  }
+
+  function updateReplyRule(id: string, patch: Partial<ReplyRule>) {
+    setCharacterSettings((current) => ({ ...current, replyRules: current.replyRules.map((rule) => rule.id === id ? { ...rule, ...patch } : rule) }));
+  }
+
+  function deleteReplyRule(id: string) {
+    setCharacterSettings((current) => ({ ...current, replyRules: current.replyRules.filter((rule) => rule.id !== id) }));
+  }
   function rememberMessage(message: Message) {
     const label = message.role === "user" ? "You" : "Mira";
     const entry = encodeMemoryEntry("General", `• ${label}: ${message.content.trim().replace(/\s+/g, " ")}`);
