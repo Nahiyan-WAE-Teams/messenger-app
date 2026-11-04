@@ -32,7 +32,7 @@ jobs:
       - name: Install web dependencies
         run: npm install
 
-      - name: Test local reply engine
+      - name: Test local dating algorithms
         run: npm test
 
       - name: Export static offline app
@@ -69,7 +69,7 @@ jobs:
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: mira-messenger-standalone-apk
+          name: lovely-offline-dating-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
