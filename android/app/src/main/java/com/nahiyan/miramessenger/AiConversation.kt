@@ -96,8 +96,8 @@ object AiChatClient {
                 .put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", system))))
                 .put("contents", contents)
                 .put("generationConfig", JSONObject().put("temperature", 0.85).put("maxOutputTokens", 350))
-            val url = "https://generativelanguage.googleapis.com/v1beta/models/${config.preferences.model}:generateContent?key=${config.apiKey}"
-            val response = request(url, "{}", body.toString(), null)
+            val url = "https://generativelanguage.googleapis.com/v1beta/models/${config.preferences.model}:generateContent"
+            val response = request(url, config.apiKey, body.toString(), null)
             response.optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")
                 ?.optJSONArray("parts")?.optJSONObject(0)?.optString("text").orEmpty().trim()
                 .ifBlank { throw IllegalStateException("The AI provider returned an empty reply.") }
