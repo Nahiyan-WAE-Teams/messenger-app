@@ -1,0 +1,15 @@
+<resources>
+    <style name="Theme.Lovely" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:statusBarColor">@color/lovely_splash_background</item>
+        <item name="android:navigationBarColor">@color/lovely_splash_background</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:windowActionModeOverlay">true</item>
+    </style>
+    <style name="Theme.Lovely.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/lovely_splash_background</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_splash_mark</item>
+        <item name="postSplashScreenTheme">@style/Theme.Lovely</item>
+    </style>
+</resources>
