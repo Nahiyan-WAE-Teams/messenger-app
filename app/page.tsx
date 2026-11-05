@@ -66,7 +66,7 @@ export default function Home() {
   },[]);
   useEffect(()=>{if(!ready)return;try{localStorage.setItem(KEY,JSON.stringify({version:2,profiles,state,filters:{minAge,maxAge,intent,interestFilter},own:{name:ownName,bio:ownBio,interests:ownInterests}}));}catch{/* Device storage can be full. */}},[profiles,state,minAge,maxAge,intent,interestFilter,ownName,ownBio,ownInterests,ready]);
 
-  const discovery = useMemo(()=>getDiscoverProfiles(profiles,{minAge,maxAge,intent,interests:[...new Set([...ownInterests,...interestFilter])]},state),[profiles,minAge,maxAge,intent,ownInterests,interestFilter,state]);
+  const discovery = useMemo<DatingProfile[]>(()=>getDiscoverProfiles(profiles,{minAge,maxAge,intent,interests:[...new Set([...ownInterests,...interestFilter])]},state) as DatingProfile[],[profiles,minAge,maxAge,intent,ownInterests,interestFilter,state]);
   const current = discovery[0];
   const matches = state.matches.map((m: Match)=>({match:m,profile:profiles.find((p: DatingProfile)=>p.id===m.profileId)})).filter((x: {match: Match; profile: DatingProfile | undefined})=>x.profile);
   const liked = state.likedProfileIds.map(id=>profiles.find(p=>p.id===id)).filter(Boolean) as DatingProfile[];
