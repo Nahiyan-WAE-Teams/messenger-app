@@ -6,6 +6,12 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.foundation.*
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import kotlin.math.abs
+import kotlin.math.roundToInt
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -152,7 +158,7 @@ fun LovelyApp(vm: LovelyViewModel) {
         val profile=items.getOrNull(index)
         if(profile==null) Empty("That's everyone for now.","Widen your filters or add a profile to your local collection.","＋ Add a profile",add)
         else {
-            Hero(profile,Modifier.fillMaxWidth().height(560.dp),DiscoveryRanker.explain(profile, (p.interests+","+myInterests).split(",").map{it.trim().lowercase()}.filter{it.isNotBlank()}.toSet(), p.values.split(",").map{it.trim().lowercase()}.filter{it.isNotBlank()}.toSet(), p.lifestyle.split(",").map{it.trim().lowercase()}.filter{it.isNotBlank()}.toSet(), p.personality.split(",").map{it.trim().lowercase()}.filter{it.isNotBlank()}.toSet()))
+            Hero(profile,Modifier.fillMaxWidth().height(560.dp),DiscoveryRanker.explain(profile, (p.interests+","+myInterests).split(",").map{it.trim().lowercase()}.filter{it.isNotBlank()}.toSet(), p.values.split(",").map{it.trim().lowercase()}.filter{it.isNotBlank()}.toSet(), p.lifestyle.split(",").map{it.trim().lowercase()}.filter{it.isNotBlank()}.toSet(), p.personality.split(",").map{it.trim().lowercase()}.filter{it.isNotBlank()}.toSet()), onSwipeLeft={pass(profile);index=0}, onSwipeRight={like(profile);index=0})
             Spacer(Modifier.height(14.dp))
             Row(horizontalArrangement=Arrangement.spacedBy(14.dp),verticalAlignment=Alignment.CenterVertically) {
                 OutlinedButton(onClick={pass(profile);index=0},Modifier.weight(.42f).height(60.dp),
@@ -170,8 +176,25 @@ fun LovelyApp(vm: LovelyViewModel) {
     }
 }
 
-@Composable private fun Hero(p:ProfileEntity,modifier:Modifier=Modifier,reasons:List<String> = emptyList()) {
-    Card(modifier,shape=RoundedCornerShape(34.dp),elevation=CardDefaults.cardElevation(defaultElevation=10.dp),
+@Composable private fun Hero(p:ProfileEntity,modifier:Modifier=Modifier,reasons:List<String> = emptyList(),onSwipeLeft:()->Unit={},onSwipeRight:()->Unit={}) {
+    var dragX by remember(p.id) { mutableFloatStateOf(0f) }
+    val animatedX by animateFloatAsState(dragX,animationSpec=spring(dampingRatio=.72f,stiffness=420f),label="profile-swipe")
+    val haptic=LocalHapticFeedback.current
+    val swipeInput=Modifier.pointerInput(p.id) {
+        detectHorizontalDragGestures(
+            onDragEnd={
+                when {
+                    dragX > 125f -> { haptic.performHapticFeedback(HapticFeedbackType.LongPress); onSwipeRight() }
+                    dragX < -125f -> { haptic.performHapticFeedback(HapticFeedbackType.LongPress); onSwipeLeft() }
+                }
+                dragX=0f
+            },
+            onDragCancel={dragX=0f},
+            onHorizontalDrag={change,amount -> change.consume(); dragX=(dragX+amount).coerceIn(-260f,260f)}
+        )
+    }
+
+    Card(modifier.then(swipeInput).offset { IntOffset(animatedX.roundToInt(),0) }.graphicsLayer { rotationZ=animatedX/42f; alpha=1f-(abs(animatedX)/1500f).coerceIn(0f,.16f) },shape=RoundedCornerShape(34.dp),elevation=CardDefaults.cardElevation(defaultElevation=10.dp),
         border=BorderStroke(1.dp,Color.White.copy(alpha=.11f))) {
         Box(Modifier.fillMaxSize().background(Brush.linearGradient(palette(p.palette)))) {
             if(p.photo.isNotBlank()) ProfileImage(p.photo,Modifier.fillMaxSize())
