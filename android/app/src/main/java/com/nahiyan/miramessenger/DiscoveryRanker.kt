@@ -35,7 +35,7 @@ object DiscoveryRanker {
         while (remaining.isNotEmpty()) {
             val chosen = remaining.maxWithOrNull(compareBy<ProfileEntity> { p ->
                 val diversity = if (ranked.isEmpty()) 1.0 else 1.0 - ranked.maxOf { similarity(p, it) }
-                fit(p) * .47 + diversity * .48 + ((p.id.hashCode() xor seed).toUInt().toLong() / 4294967295.0) * .05
+                fit(p) * .40 + diversity * .55 + ((p.id.hashCode() xor seed).toUInt().toLong() / 4294967295.0) * .05
             }.thenBy { it.id })!!
             ranked += chosen
             remaining.remove(chosen)
