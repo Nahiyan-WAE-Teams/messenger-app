@@ -107,7 +107,7 @@ fun LovelyApp(vm: LovelyViewModel) {
                     {activeId=it.id;tab=Tab.Chats.name},{editor=it})
                 Tab.Chats -> Chats(chatProfiles,active,activeMessages,{activeId=it.id},
                     {p,msg->vm.send(p,msg)},{vm.removeConversation(it.id);activeId=""},{activeId=""},{tab=Tab.Discover.name},
-                    {editor=it})
+                    {editor=it},aiPreferences)
                 Tab.Profile -> ProfileSettings(profiles,mine,pref,aiPreferences,vm::saveOwn,vm::savePreferences,vm::saveAiSettings,
                     {add=true},{editor=it},vm::delete,vm::reset)
             }
@@ -286,10 +286,12 @@ fun LovelyApp(vm: LovelyViewModel) {
     }
 }
 
-@Composable private fun Chats(items:List<ProfileEntity>,active:ProfileEntity?,messages:List<ChatMessageEntity>,select:(ProfileEntity)->Unit,send:(ProfileEntity,String)->Unit,remove:(ProfileEntity)->Unit,back:()->Unit,discover:()->Unit,edit:(ProfileEntity)->Unit) {
+@Composable private fun Chats(items:List<ProfileEntity>,active:ProfileEntity?,messages:List<ChatMessageEntity>,select:(ProfileEntity)->Unit,send:(ProfileEntity,String)->Unit,remove:(ProfileEntity)->Unit,back:()->Unit,discover:()->Unit,edit:(ProfileEntity)->Unit,ai:AiPreferences) {
     var draft by remember(active?.id) { mutableStateOf("") }
+    val chatPrivacy = if (ai.mode == ConversationMode.LOCAL) "Fictional dialogue or private notes. Nothing is sent."
+        else "AI mode sends fictional-character chat context to ${ai.provider.name}. Real-person notes stay local."
     Column(Modifier.fillMaxSize().padding(16.dp)) {
-        Header("Local conversations","Messages","Fictional dialogue or private notes. Nothing is sent.")
+        Header("Conversations","Messages",chatPrivacy)
         if(active==null) {
             if(items.isEmpty()) Empty("Your conversations live here.","Open a profile from Likes or Matches to start a local conversation.","Explore profiles",discover)
             else LazyColumn(verticalArrangement=Arrangement.spacedBy(8.dp)) {
@@ -312,7 +314,7 @@ fun LovelyApp(vm: LovelyViewModel) {
                 Avatar(active,42)
                 Column(Modifier.weight(1f).padding(start=10.dp)) {
                     Text(active.name,fontWeight=FontWeight.Bold)
-                    Text(if(active.kind=="real") "Private notes · not connected" else "Fictional · dialogue rules",fontSize=11.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(if(active.kind=="real") "Private notes · not connected" else "Fictional · "+when(ai.mode) { ConversationMode.LOCAL -> "local rules"; ConversationMode.HYBRID -> "hybrid AI"; ConversationMode.AI_ONLY -> "AI replies" },fontSize=11.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 TextButton(onClick={edit(active)}) { Text("Edit",color=MaterialTheme.colorScheme.primary) }
                 TextButton(onClick={remove(active)}) { Text("Clear",color=MaterialTheme.colorScheme.error) }
