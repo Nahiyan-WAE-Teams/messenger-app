@@ -29,6 +29,7 @@ import androidx.compose.ui.draw.*
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.*
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.text.SimpleDateFormat
@@ -384,7 +385,7 @@ fun LovelyApp(vm: LovelyViewModel) {
                     FilterChip(provider==AiProvider.OPENROUTER,{provider=AiProvider.OPENROUTER;model="openrouter/auto"},label={Text("OpenRouter")})
                 }
                 OutlinedTextField(model,{model=it},Modifier.fillMaxWidth(),label={Text("Model ID")},placeholder={Text(if(provider==AiProvider.GEMINI) "gemini-2.5-flash" else "openrouter/auto")},singleLine=true)
-                OutlinedTextField(apiKey,{apiKey=it;clearKey=false},Modifier.fillMaxWidth(),label={Text(if(ai.hasKey) "Replace API key (leave blank to keep saved key)" else "API key")},placeholder={Text("Paste your provider key")},singleLine=true)
+                OutlinedTextField(apiKey,{apiKey=it;clearKey=false},Modifier.fillMaxWidth(),label={Text(if(ai.hasKey) "Replace API key (leave blank to keep saved key)" else "API key")},placeholder={Text("Paste your provider key")},singleLine=true,visualTransformation=PasswordVisualTransformation(),keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Password))
                 Row(verticalAlignment=Alignment.CenterVertically) {
                     Text(if(ai.hasKey && !clearKey) "A key is saved securely on this device." else "No API key saved.",fontSize=11.sp,color=MaterialTheme.colorScheme.onSurfaceVariant,modifier=Modifier.weight(1f))
                     if(ai.hasKey) TextButton(onClick={clearKey=true;apiKey=""}) { Text("Remove key",color=MaterialTheme.colorScheme.error) }
