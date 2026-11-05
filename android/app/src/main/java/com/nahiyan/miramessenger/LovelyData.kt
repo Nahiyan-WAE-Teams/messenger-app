@@ -200,7 +200,7 @@ class LovelyRepository(private val dao: LovelyDao) {
                 previous.exchangeCount >= 1 -> "getting-to-know"
                 else -> "first-meeting"
             }
-            val reply = DialogueEngine.reply(text, profile.dialogueRules, profile.fallback, stage, recentReplies, priorUser)
+            val reply = OfflineConversationEngine.reply(profile, text, stage, recentReplies, priorUser, previous.exchangeCount)
             dao.insertMessage(ChatMessageEntity(profileId=profile.id, sender="them", message=reply, createdAt=System.currentTimeMillis()))
             val day = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date(now))
             val days = (previous.activeDays.split(",").filter { it.isNotBlank() } + day).distinct().takeLast(30).joinToString(",")
@@ -251,7 +251,7 @@ object DialogueEngine {
 
     private fun norm(s: String) = java.text.Normalizer.normalize(s.lowercase(), java.text.Normalizer.Form.NFKC)
         .replace(Regex("[^\\p{L}\\p{N}\\s']"), " ").replace(Regex("\\s+"), " ").trim()
-    fun reply(message: String, rulesText: String, fallback: String, stage: String, recentReplies: List<String>, previousMessage: String): String {
+    fun matchingReply(message: String, rulesText: String, stage: String, recentReplies: List<String>, previousMessage: String): String? {
         val padded = " ${norm(message)} "
         val previous = " ${norm(previousMessage)} "
         data class Candidate(val score: Int, val priority: Int, val replies: List<String>)
@@ -278,7 +278,11 @@ object DialogueEngine {
             val replies = parts[1].split(";").map { it.trim() }.filter { it.isNotBlank() }
             if (score == 0 || replies.isEmpty()) null else Candidate(score, priority, replies)
         }.sortedWith(compareByDescending<Candidate> { it.priority }.thenByDescending { it.score })
-        val winner = candidates.firstOrNull() ?: return fallback
+        val winner = candidates.firstOrNull() ?: return null
         return winner.replies.firstOrNull { it !in recentReplies.takeLast(3) } ?: winner.replies.first()
     }
+
+    fun reply(message: String, rulesText: String, fallback: String, stage: String, recentReplies: List<String>, previousMessage: String): String =
+        matchingReply(message, rulesText, stage, recentReplies, previousMessage) ?: fallback
+
 }
