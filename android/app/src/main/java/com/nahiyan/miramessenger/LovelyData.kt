@@ -174,6 +174,13 @@ class LovelyRepository(private val dao: LovelyDao) {
             val current = dao.profileById(seed.id) ?: return@forEach
             if (current.kind == "fictional" && current.dialogueRules == DialogueEngine.DEFAULT_RULES && current.fallback == DialogueEngine.DEFAULT_FALLBACK) {
                 dao.upsertProfile(current.copy(dialogueRules = seed.dialogueRules, fallback = seed.fallback))
+            } else if (current.kind == "fictional" && current.dialogueRules.lines().none { line ->
+                    line.substringBefore("|").split(",").any { it.trim().lowercase() in listOf("hello", "hi", "hey") }
+                }) {
+                // Add a greeting rule without replacing any existing character-authored rules.
+                dao.upsertProfile(current.copy(
+                    dialogueRules = "hello, hi, hey | Hey! It's nice to hear from you.\n${current.dialogueRules}"
+                ))
             }
         }
         if (dao.getPreferences() == null) dao.upsertPreferences(PreferencesEntity())
