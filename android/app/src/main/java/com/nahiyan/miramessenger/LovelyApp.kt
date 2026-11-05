@@ -310,6 +310,7 @@ fun LovelyApp(vm: LovelyViewModel) {
     var rules by remember(initial?.id) { mutableStateOf(initial?.dialogueRules?:"hello, hi, hey | Hey! Nice to hear from you.") }
     var fallback by remember(initial?.id) { mutableStateOf(initial?.fallback?:"I haven't written a reply for that yet.") }
 
+    var error by remember { mutableStateOf("") }
     var photo by remember(initial?.id) { mutableStateOf(initial?.photo.orEmpty()) }
     val context = LocalContext.current
     val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
@@ -319,7 +320,6 @@ fun LovelyApp(vm: LovelyViewModel) {
             else error = "Choose a photo smaller than 1.5 MB."
         }
     }
-    var error by remember { mutableStateOf("") }
     AlertDialog(onDismissRequest=dismiss,title={Text(if(initial==null) "Add a profile" else "Edit profile",fontWeight=FontWeight.Bold)},
         text={Column(Modifier.heightIn(max=550.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(8.dp)) {
             Row { FilterChip(kind=="fictional",{kind="fictional"},label={Text("Fictional")}); Spacer(Modifier.width(6.dp)); FilterChip(kind=="real",{kind="real";mutual=false},label={Text("Real-person record")}) }
