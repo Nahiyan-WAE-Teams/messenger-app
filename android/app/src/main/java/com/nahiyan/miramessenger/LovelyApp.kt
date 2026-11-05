@@ -209,6 +209,16 @@ fun LovelyApp(vm: LovelyViewModel) {
                     Text(p.intent.ifBlank{"Open to a connection"},Modifier.padding(horizontal=12.dp,vertical=7.dp),
                         color=Color(0xFFFFD9E4),fontSize=11.sp,fontWeight=FontWeight.SemiBold)
                 }
+                if(reasons.isNotEmpty()) {
+                    Text("WHY THIS PROFILE",fontSize=9.sp,letterSpacing=1.5.sp,color=Color.White.copy(alpha=.62f),fontWeight=FontWeight.Bold)
+                    Row(horizontalArrangement=Arrangement.spacedBy(7.dp)) {
+                        reasons.forEach { reason ->
+                            Surface(shape=CircleShape,color=Color(0xFFFF789A).copy(alpha=.20f),border=BorderStroke(.7.dp,Color(0xFFFFB1C5).copy(alpha=.35f))) {
+                                Text(reason,Modifier.padding(horizontal=9.dp,vertical=6.dp),fontSize=9.sp,color=Color.White,fontWeight=FontWeight.SemiBold)
+                            }
+                        }
+                    }
+                }
                 Text(p.bio.ifBlank{"A little more about this profile is waiting to be added."},
                     color=Color.White.copy(alpha=.94f),style=MaterialTheme.typography.bodyLarge,lineHeight=23.sp)
                 val tags=p.interests.split(",").map{it.trim()}.filter{it.isNotBlank()}.take(4)

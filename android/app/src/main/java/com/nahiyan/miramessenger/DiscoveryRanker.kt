@@ -12,6 +12,21 @@ object DiscoveryRanker {
         overlap(tokens(a.personalityTags), b.personalityTags) * .25 +
         overlap(tokens(a.values), b.values) * .20
 
+    fun explain(
+        profile: ProfileEntity,
+        interests: Set<String>,
+        values: Set<String>,
+        lifestyle: Set<String>,
+        personality: Set<String>
+    ): List<String> {
+        val reasons = mutableListOf<String>()
+        if (tokens(profile.interests).intersect(interests).isNotEmpty()) reasons += "Shared interests"
+        if (tokens(profile.values).intersect(values).isNotEmpty()) reasons += "Similar values"
+        if (tokens(profile.lifestyle).intersect(lifestyle).isNotEmpty()) reasons += "Lifestyle fit"
+        if (tokens(profile.personalityTags).intersect(personality).isNotEmpty()) reasons += "Personality fit"
+        return reasons.take(3)
+    }
+
     fun rank(
         profiles: List<ProfileEntity>, interests: Set<String> = emptySet(), values: Set<String> = emptySet(),
         lifestyle: Set<String> = emptySet(), personality: Set<String> = emptySet(), intent: String = "Any",
