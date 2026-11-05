@@ -367,7 +367,7 @@ fun LovelyApp(vm: LovelyViewModel) {
     }
     if (bitmap != null) Image(bitmap, contentDescription="Profile photo", modifier=modifier, contentScale=ContentScale.Crop)
 }
-\n@Composable private fun Avatar(p:ProfileEntity,size:Int) {
+@Composable private fun Avatar(p:ProfileEntity,size:Int) {
     Surface(Modifier.size(size.dp),shape=CircleShape,color=palette(p.palette).first()) {
         Box(contentAlignment=Alignment.Center) { if(p.photo.isNotBlank()) ProfileImage(p.photo,Modifier.fillMaxSize().clip(CircleShape)) else Text(p.name.take(1).uppercase(),color=Color.White,fontSize=(size*.42).sp) }
     }
