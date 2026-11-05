@@ -16,7 +16,7 @@ class DiscoveryRankerTest {
         val profiles = listOf(
             ProfileEntity("a", "A", 25, "", interests="books, art", values="kindness"),
             ProfileEntity("b", "B", 25, "", interests="books, art", values="kindness"),
-            ProfileEntity("c", "C", 25, "", interests="football, travel", values="adventure")
+            ProfileEntity("c", "C", 25, "", interests="books, art", values="adventure", personalityTags="outgoing")
         )
         val ranked = DiscoveryRanker.rank(profiles, interests=setOf("books", "art"))
         assertTrue(ranked.first().id in listOf("a", "b"))
