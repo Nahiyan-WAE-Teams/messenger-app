@@ -22,4 +22,16 @@ class DiscoveryRankerTest {
         assertTrue(ranked.first().id in listOf("a", "b"))
         assertEquals("c", ranked[1].id)
     }
+    @Test fun recommendationReasonsOnlyUseActualSharedSignals() {
+        val profile = ProfileEntity("a", "Ava", 25, "Bio", interests="books, travel", values="honesty", lifestyle="outdoors")
+        val reasons = DiscoveryRanker.explain(
+            profile,
+            interests=setOf("books"),
+            values=setOf("honesty"),
+            lifestyle=setOf("homebody"),
+            personality=setOf("playful")
+        )
+        assertEquals(listOf("Shared interests", "Similar values"), reasons)
+    }
+
 }
