@@ -142,7 +142,10 @@ fun LovelyApp(vm: LovelyViewModel) {
                     Slider(p.maxAge.toFloat(),{save(p.copy(maxAge=it.toInt().coerceAtLeast(p.minAge)))},valueRange=18f..60f)
                     Text("Relationship intention")
                     IntentRow(p.intent) { save(p.copy(intent=it)) }
-                    OutlinedTextField(p.interests,{save(p.copy(interests=it))},Modifier.fillMaxWidth(),label={Text("Preferred interests, comma separated")})
+                    OutlinedTextField(p.interests,{save(p.copy(interests=it))},Modifier.fillMaxWidth(),label={Text("Interests you enjoy")},placeholder={Text("Art, books, travel…")})
+                    OutlinedTextField(p.values,{save(p.copy(values=it))},Modifier.fillMaxWidth(),label={Text("Values that matter")},placeholder={Text("Honesty, curiosity, kindness…")})
+                    OutlinedTextField(p.lifestyle,{save(p.copy(lifestyle=it))},Modifier.fillMaxWidth(),label={Text("Lifestyle")},placeholder={Text("Active, homebody, outdoors…")})
+                    OutlinedTextField(p.personality,{save(p.copy(personality=it))},Modifier.fillMaxWidth(),label={Text("Personality you connect with")},placeholder={Text("Thoughtful, playful, calm…")})
                 }
             }
         }
@@ -151,9 +154,15 @@ fun LovelyApp(vm: LovelyViewModel) {
         else {
             Hero(profile,Modifier.fillMaxWidth().height(560.dp))
             Spacer(Modifier.height(14.dp))
-            Row(horizontalArrangement=Arrangement.spacedBy(12.dp)) {
-                OutlinedButton(onClick={pass(profile);index=0},Modifier.weight(1f).height(54.dp),shape=RoundedCornerShape(17.dp)) { Text("×  Pass") }
-                Button(onClick={like(profile);index=0},Modifier.weight(1f).height(54.dp),shape=RoundedCornerShape(17.dp)) { Text("♥  Like") }
+            Row(horizontalArrangement=Arrangement.spacedBy(14.dp),verticalAlignment=Alignment.CenterVertically) {
+                OutlinedButton(onClick={pass(profile);index=0},Modifier.weight(.42f).height(60.dp),
+                    shape=RoundedCornerShape(20.dp),border=BorderStroke(1.dp,Color.White.copy(alpha=.12f))) {
+                    Text("×",fontSize=23.sp); Spacer(Modifier.width(7.dp)); Text("Pass",fontWeight=FontWeight.SemiBold)
+                }
+                Button(onClick={like(profile);index=0},Modifier.weight(.58f).height(60.dp),
+                    shape=RoundedCornerShape(20.dp),colors=ButtonDefaults.buttonColors(containerColor=MaterialTheme.colorScheme.primary)) {
+                    Text("♥",fontSize=20.sp); Spacer(Modifier.width(8.dp)); Text("Send a like",fontWeight=FontWeight.Bold)
+                }
             }
             Spacer(Modifier.height(12.dp))
             Text("Discovery is ranked privately using your preferences and profile diversity. No compatibility percentage is shown.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
