@@ -13,7 +13,7 @@ import androidx.webkit.WebViewAssetLoader
 
 class MainActivity : Activity() {
     private lateinit var webView: WebView
-    private lateinit var progress: ProgressBar
+    private lateinit var loadingProgressBar: ProgressBar
     private lateinit var assetLoader: WebViewAssetLoader
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -23,7 +23,7 @@ class MainActivity : Activity() {
             .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
             .build()
 
-        progress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
+        loadingProgressBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
             max = 100
         }
         webView = WebView(this).apply {
@@ -40,8 +40,8 @@ class MainActivity : Activity() {
             settings.setSupportMultipleWindows(false)
             webChromeClient = object : WebChromeClient() {
                 override fun onProgressChanged(view: WebView?, newProgress: Int) {
-                    progress.progress = newProgress
-                    progress.visibility = if (newProgress in 1..99) android.view.View.VISIBLE else android.view.View.GONE
+                    this@MainActivity.loadingProgressBar.progress = newProgress
+                    this@MainActivity.loadingProgressBar.visibility = if (newProgress in 1..99) android.view.View.VISIBLE else android.view.View.GONE
                 }
             }
             webViewClient = object : WebViewClient() {
@@ -59,7 +59,7 @@ class MainActivity : Activity() {
 
         val root = FrameLayout(this)
         root.addView(webView)
-        root.addView(progress, FrameLayout.LayoutParams(
+        root.addView(loadingProgressBar, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             4,
             android.view.Gravity.TOP
