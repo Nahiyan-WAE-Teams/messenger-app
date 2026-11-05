@@ -60,10 +60,28 @@ fun LovelyApp(vm: LovelyViewModel) {
     val activeMessages = messages.filter { it.profileId==activeId }
 
     Scaffold(containerColor=MaterialTheme.colorScheme.background,bottomBar={
-        NavigationBar(containerColor=MaterialTheme.colorScheme.surface,tonalElevation=0.dp) {
+        NavigationBar(
+            modifier=Modifier.padding(horizontal=12.dp, vertical=8.dp).clip(RoundedCornerShape(26.dp))
+                .border(1.dp,Color.White.copy(alpha=.07f),RoundedCornerShape(26.dp)),
+            containerColor=Color(0xFF19151E), tonalElevation=0.dp
+        ) {
             Tab.entries.forEach { item ->
                 NavigationBarItem(selected=tab==item.name,onClick={tab=item.name},
-                    icon={Text(item.glyph,fontSize=20.sp)},label={Text(item.label,fontSize=10.sp)})
+                    icon={
+                        AnimatedContent(tab==item.name,label="nav-icon") { selected ->
+                            Text(item.glyph,fontSize=if(selected) 22.sp else 20.sp,
+                                color=if(selected) MaterialTheme.colorScheme.primary else Color(0xFF8F8794))
+                        }
+                    },
+                    label={Text(item.label,fontSize=10.sp,fontWeight=if(tab==item.name) FontWeight.Bold else FontWeight.Medium)},
+                    colors=NavigationBarItemDefaults.colors(
+                        selectedIconColor=MaterialTheme.colorScheme.primary,
+                        selectedTextColor=MaterialTheme.colorScheme.primary,
+                        indicatorColor=Color(0xFF382331),
+                        unselectedIconColor=Color(0xFF8F8794),
+                        unselectedTextColor=Color(0xFF8F8794)
+                    )
+                )
             }
         }
     }) { padding ->
@@ -89,19 +107,30 @@ fun LovelyApp(vm: LovelyViewModel) {
 }
 
 @Composable private fun Header(kicker:String,title:String,subtitle:String) {
-    Column(Modifier.padding(bottom=14.dp)) {
-        Text(kicker.uppercase(),color=MaterialTheme.colorScheme.primary,fontSize=10.sp,fontWeight=FontWeight.Bold,letterSpacing=1.5.sp)
-        Text(title,style=MaterialTheme.typography.headlineMedium,fontWeight=FontWeight.Bold)
-        Text(subtitle,color=MaterialTheme.colorScheme.onSurfaceVariant,style=MaterialTheme.typography.bodyMedium)
+    Column(Modifier.padding(bottom=18.dp),verticalArrangement=Arrangement.spacedBy(5.dp)) {
+        Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(7.dp)) {
+            Box(Modifier.size(7.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary))
+            Text(kicker.uppercase(),color=MaterialTheme.colorScheme.primary,fontSize=10.sp,fontWeight=FontWeight.Bold,letterSpacing=1.8.sp)
+        }
+        Text(title,style=MaterialTheme.typography.headlineLarge,fontWeight=FontWeight.Bold,letterSpacing=(-.7).sp)
+        Text(subtitle,color=MaterialTheme.colorScheme.onSurfaceVariant,style=MaterialTheme.typography.bodyMedium,lineHeight=21.sp)
     }
 }
 
 @Composable private fun Discover(items:List<ProfileEntity>,p:PreferencesEntity,show:Boolean,toggle:()->Unit,save:(PreferencesEntity)->Unit,like:(ProfileEntity)->Unit,pass:(ProfileEntity)->Unit,add:()->Unit) {
     var index by remember(items) { mutableIntStateOf(0) }
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp)) {
-        Row(verticalAlignment=Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) { Header("Your offline dating world","Discover someone.","A little curiosity goes a long way.") }
-            FilledTonalIconButton(onClick=toggle) { Text("☷",fontSize=21.sp) }
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal=18.dp, vertical=18.dp)) {
+        Row(verticalAlignment=Alignment.Top) {
+            Column(Modifier.weight(1f)) {
+                Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                    Text("lovely",fontSize=25.sp,fontWeight=FontWeight.ExtraBold,letterSpacing=(-1.1).sp,color=MaterialTheme.colorScheme.onBackground)
+                    Text("✦",fontSize=17.sp,color=MaterialTheme.colorScheme.primary)
+                }
+                Text("A little closer to a good story.",fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(18.dp))
+                Header("Curated for your kind of connection","Meet someone new.","A thoughtful collection, shaped by what matters to you.")
+            }
+            FilledTonalIconButton(onClick=toggle,modifier=Modifier.padding(top=4.dp)) { Text("☷",fontSize=21.sp) }
         }
         AnimatedVisibility(show,enter=expandVertically()+fadeIn(),exit=shrinkVertically()+fadeOut()) {
             Surface(shape=RoundedCornerShape(22.dp),color=MaterialTheme.colorScheme.surface,modifier=Modifier.fillMaxWidth().padding(bottom=14.dp)) {
@@ -120,7 +149,7 @@ fun LovelyApp(vm: LovelyViewModel) {
         val profile=items.getOrNull(index)
         if(profile==null) Empty("That's everyone for now.","Widen your filters or add a profile to your local collection.","＋ Add a profile",add)
         else {
-            Hero(profile,Modifier.fillMaxWidth().heightIn(min=420.dp))
+            Hero(profile,Modifier.fillMaxWidth().height(560.dp))
             Spacer(Modifier.height(14.dp))
             Row(horizontalArrangement=Arrangement.spacedBy(12.dp)) {
                 OutlinedButton(onClick={pass(profile);index=0},Modifier.weight(1f).height(54.dp),shape=RoundedCornerShape(17.dp)) { Text("×  Pass") }
