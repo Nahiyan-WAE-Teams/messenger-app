@@ -1,124 +1,171 @@
 package com.nahiyan.miramessenger
 
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.background
+import androidx.compose.animation.*
+import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.*
+import androidx.compose.ui.draw.*
+import androidx.compose.ui.graphics.*
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.*
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import java.text.SimpleDateFormat
+import java.util.*
 
-private enum class LovelyTab(val title: String, val glyph: String) {
-    Discover("Discover", "✦"), Likes("Likes", "♡"), Chats("Chats", "✉"), Profile("Profile", "◉")
-}
+private enum class Tab(val label:String,val glyph:String) { Discover("Discover","✦"), Likes("Likes","♡"), Matches("Matches","♥"), Chats("Chats","▤"), Profile("Profile","◉") }
+private val intents = listOf("Any","Long-term","See where it goes","Friendship first")
+private val interests = listOf("Art","Books","Coffee","Cooking","Concerts","Dogs","Fashion","Fitness","Food","Hiking","Music","Movies","Nature","Photography","Plants","Space","Travel","Yoga","Architecture","Cats","Museums")
 
 @Composable
-fun LovelyApp(viewModel: LovelyViewModel) {
-    var selected by rememberSaveable { mutableStateOf(LovelyTab.Discover.name) }
-    val discover by viewModel.discover.collectAsStateWithLifecycle()
-    val matches by viewModel.matches.collectAsStateWithLifecycle()
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        bottomBar = {
-            NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
-                LovelyTab.entries.forEach { tab ->
-                    NavigationBarItem(
-                        selected = selected == tab.name,
-                        onClick = { selected = tab.name },
-                        icon = { Text(tab.glyph) },
-                        label = { Text(tab.title) }
-                    )
-                }
+fun LovelyApp(vm: LovelyViewModel) {
+    var tab by rememberSaveable { mutableStateOf(Tab.Discover.name) }
+    var editor by remember { mutableStateOf<ProfileEntity?>(null) }
+    var add by remember { mutableStateOf(false) }
+    var filters by rememberSaveable { mutableStateOf(false) }
+    var activeId by rememberSaveable { mutableStateOf("") }
+    val profiles by vm.profiles.collectAsStateWithLifecycle()
+    val unseen by vm.unseen.collectAsStateWithLifecycle()
+    val likes by vm.likes.collectAsStateWithLifecycle()
+    val matches by vm.matches.collectAsStateWithLifecycle()
+    val messages by vm.messages.collectAsStateWithLifecycle()
+    val preferences by vm.preferences.collectAsStateWithLifecycle()
+    val own by vm.ownProfile.collectAsStateWithLifecycle()
+    val pref = preferences ?: PreferencesEntity()
+    val mine = own ?: OwnProfileEntity()
+    val discover = remember(unseen,pref,mine) {
+        DiscoveryRanker.rank(unseen,
+            interests=(mine.interests+","+pref.interests).split(",").map { it.trim().lowercase() }.filter { it.isNotBlank() }.toSet(),
+            values=pref.values.split(",").map { it.trim().lowercase() }.filter { it.isNotBlank() }.toSet(),
+            lifestyle=pref.lifestyle.split(",").map { it.trim().lowercase() }.filter { it.isNotBlank() }.toSet(),
+            personality=pref.personality.split(",").map { it.trim().lowercase() }.filter { it.isNotBlank() }.toSet(),
+            intent=pref.intent,minAge=pref.minAge,maxAge=pref.maxAge,seed=likes.size*31+matches.size*17)
+    }
+    val chatProfiles = messages.map { it.profileId }.distinct().mapNotNull { id -> profiles.find { it.id==id } }
+    val active = profiles.find { it.id==activeId }
+    val activeMessages = messages.filter { it.profileId==activeId }
+
+    Scaffold(containerColor=MaterialTheme.colorScheme.background,bottomBar={
+        NavigationBar(containerColor=MaterialTheme.colorScheme.surface,tonalElevation=0.dp) {
+            Tab.entries.forEach { item ->
+                NavigationBarItem(selected=tab==item.name,onClick={tab=item.name},
+                    icon={Text(item.glyph,fontSize=20.sp)},label={Text(item.label,fontSize=10.sp)})
             }
         }
-    ) { insets ->
-        AnimatedContent(
-            targetState = LovelyTab.valueOf(selected),
-            modifier = Modifier.fillMaxSize().padding(insets),
-            transitionSpec = { fadeIn() togetherWith fadeOut() },
-            label = "native-navigation"
-        ) { tab ->
-            when (tab) {
-                LovelyTab.Discover -> DiscoverScreen(discover, viewModel::like, viewModel::pass)
-                LovelyTab.Likes -> SimpleListScreen("Your likes", matches, "No mutual matches yet", "A match appears only when a fictional profile explicitly has mutual interest.")
-                LovelyTab.Chats -> PlaceholderScreen("Conversations", "Native chat is the next migration milestone. Real-person records will remain private notes, never simulated messages.")
-                LovelyTab.Profile -> PlaceholderScreen("Your space", "Lovely is offline by design. Your local profiles and interactions stay on this device.")
+    }) { padding ->
+        AnimatedContent(Tab.valueOf(tab),Modifier.fillMaxSize().padding(padding),
+            transitionSpec={fadeIn()+slideInHorizontally { it/20 } togetherWith fadeOut()+slideOutHorizontally { -it/20 }},label="tab") { page ->
+            when(page) {
+                Tab.Discover -> Discover(discover,pref,filters,{filters=!filters},vm::savePreferences,
+                    {vm.act(it,"like")},{vm.act(it,"pass")},{add=true})
+                Tab.Likes -> Collection("Your likes","Profiles you chose to keep close.",likes,
+                    "No likes yet","When someone catches your eye, tap the heart in Discover.",
+                    {activeId=it.id;tab=Tab.Chats.name},{editor=it})
+                Tab.Matches -> Collection("Mutual stories","Matches exist only for fictional profiles with explicit local mutual interest.",matches,
+                    "No mutual matches yet","Edit a fictional profile and enable mutual interest to test a local match.",
+                    {activeId=it.id;tab=Tab.Chats.name},{editor=it})
+                Tab.Chats -> Chats(chatProfiles,active,activeMessages,{activeId=it.id},
+                    {p,msg->vm.send(p,msg)},{vm.delete(it);activeId=""},{activeId=""},{tab=Tab.Discover.name})
+                Tab.Profile -> ProfileSettings(profiles,mine,pref,vm::saveOwn,vm::savePreferences,
+                    {add=true},{editor=it},vm::delete,vm::reset)
             }
         }
     }
+    if(add || editor!=null) Editor(editor,{add=false;editor=null},{vm.save(it);add=false;editor=null})
 }
 
-@Composable
-private fun DiscoverScreen(profiles: List<ProfileEntity>, onLike: (ProfileEntity) -> Unit, onPass: (ProfileEntity) -> Unit) {
-    Column(Modifier.fillMaxSize().padding(horizontal = 22.dp, vertical = 18.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text("LOVELY", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
-                Text("A little closer.", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-            }
-            Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surfaceVariant) { Text("✧", Modifier.padding(13.dp), color = MaterialTheme.colorScheme.primary) }
+@Composable private fun Header(kicker:String,title:String,subtitle:String) {
+    Column(Modifier.padding(bottom=14.dp)) {
+        Text(kicker.uppercase(),color=MaterialTheme.colorScheme.primary,fontSize=10.sp,fontWeight=FontWeight.Bold,letterSpacing=1.5.sp)
+        Text(title,style=MaterialTheme.typography.headlineMedium,fontWeight=FontWeight.Bold)
+        Text(subtitle,color=MaterialTheme.colorScheme.onSurfaceVariant,style=MaterialTheme.typography.bodyMedium)
+    }
+}
+
+@Composable private fun Discover(items:List<ProfileEntity>,p:PreferencesEntity,show:Boolean,toggle:()->Unit,save:(PreferencesEntity)->Unit,like:(ProfileEntity)->Unit,pass:(ProfileEntity)->Unit,add:()->Unit) {
+    var index by remember(items) { mutableIntStateOf(0) }
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp)) {
+        Row(verticalAlignment=Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) { Header("Your offline dating world","Discover someone.","A little curiosity goes a long way.") }
+            FilledTonalIconButton(onClick=toggle) { Text("☷",fontSize=21.sp) }
         }
-        Spacer(Modifier.height(18.dp))
-        if (profiles.isEmpty()) {
-            EmptyState("You've seen everyone for now", "Add more profiles to continue discovering.")
-        } else {
-            val profile = profiles.first()
-            Card(Modifier.weight(1f).fillMaxWidth(), shape = RoundedCornerShape(30.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-                Box(Modifier.fillMaxSize().background(Brush.linearGradient(listOf(Color(0xFF573247), Color(0xFF211B2A), Color(0xFF17131C))))) {
-                    Column(Modifier.align(Alignment.Center).padding(26.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Box(Modifier.size(116.dp).clip(CircleShape).background(Brush.linearGradient(listOf(Color(0xFFFFA6B8), Color(0xFF9D6688)))), contentAlignment = Alignment.Center) {
-                            Text(profile.name.take(1), color = Color(0xFF321323), style = MaterialTheme.typography.displayLarge, fontWeight = FontWeight.Bold)
-                        }
-                        Spacer(Modifier.height(22.dp))
-                        Text("${profile.name}, ${profile.age}", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold, color = Color.White)
-                        Spacer(Modifier.height(10.dp))
-                        Text(profile.intent, color = Color(0xFFFFC1D1), style = MaterialTheme.typography.labelLarge)
-                        Spacer(Modifier.height(18.dp))
-                        Text(profile.bio, color = Color(0xFFF4EAF0), style = MaterialTheme.typography.bodyLarge, maxLines = 4, overflow = TextOverflow.Ellipsis)
-                    }
-                    Text("LOCAL PROFILE", Modifier.align(Alignment.BottomStart).padding(20.dp), color = Color(0xFFFFC1D1), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+        AnimatedVisibility(show,enter=expandVertically()+fadeIn(),exit=shrinkVertically()+fadeOut()) {
+            Surface(shape=RoundedCornerShape(22.dp),color=MaterialTheme.colorScheme.surface,modifier=Modifier.fillMaxWidth().padding(bottom=14.dp)) {
+                Column(Modifier.padding(16.dp)) {
+                    Text("Discovery preferences",fontWeight=FontWeight.Bold)
+                    Text("Minimum age: "+p.minAge)
+                    Slider(p.minAge.toFloat(),{save(p.copy(minAge=it.toInt().coerceAtMost(p.maxAge)))},valueRange=18f..60f)
+                    Text("Maximum age: "+p.maxAge)
+                    Slider(p.maxAge.toFloat(),{save(p.copy(maxAge=it.toInt().coerceAtLeast(p.minAge)))},valueRange=18f..60f)
+                    Text("Relationship intention")
+                    IntentRow(p.intent) { save(p.copy(intent=it)) }
+                    OutlinedTextField(p.interests,{save(p.copy(interests=it))},Modifier.fillMaxWidth(),label={Text("Preferred interests, comma separated")})
                 }
+            }
+        }
+        val profile=items.getOrNull(index)
+        if(profile==null) Empty("That's everyone for now.","Widen your filters or add a profile to your local collection.","＋ Add a profile",add)
+        else {
+            Hero(profile,Modifier.fillMaxWidth().heightIn(min=420.dp))
+            Spacer(Modifier.height(14.dp))
+            Row(horizontalArrangement=Arrangement.spacedBy(12.dp)) {
+                OutlinedButton(onClick={pass(profile);index=0},Modifier.weight(1f).height(54.dp),shape=RoundedCornerShape(17.dp)) { Text("×  Pass") }
+                Button(onClick={like(profile);index=0},Modifier.weight(1f).height(54.dp),shape=RoundedCornerShape(17.dp)) { Text("♥  Like") }
             }
             Spacer(Modifier.height(12.dp))
-            Text("Interests", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Text(profile.interests, color = MaterialTheme.colorScheme.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Spacer(Modifier.weight(.08f))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedButton(onClick = { onPass(profile) }, Modifier.weight(1f).height(54.dp), shape = RoundedCornerShape(18.dp)) { Text("Pass") }
-                Button(onClick = { onLike(profile) }, Modifier.weight(1f).height(54.dp), shape = RoundedCornerShape(18.dp)) { Text("Like  ♡") }
-            }
+            Text("Discovery is ranked privately using your preferences and profile diversity. No compatibility percentage is shown.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
 
-@Composable
-private fun SimpleListScreen(title: String, profiles: List<ProfileEntity>, emptyTitle: String, emptyDetail: String) {
-    Column(Modifier.fillMaxSize().padding(22.dp)) {
-        Text(title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(18.dp))
-        if (profiles.isEmpty()) EmptyState(emptyTitle, emptyDetail)
-        profiles.forEach { profile ->
-            Surface(Modifier.fillMaxWidth().padding(bottom = 10.dp), shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surface) {
-                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Surface(Modifier.size(48.dp), shape = CircleShape, color = MaterialTheme.colorScheme.primary.copy(alpha = .18f)) {
-                        Box(contentAlignment = Alignment.Center) { Text(profile.name.take(1), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold) }
-                    }
-                    Column(Modifier.padding(start = 12.dp)) {
-                        Text("${profile.name}, ${profile.age}", fontWeight = FontWeight.SemiBold)
-                        Text("Mutual local match", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodySmall)
+@Composable private fun Hero(p:ProfileEntity,modifier:Modifier=Modifier) {
+    Card(modifier,shape=RoundedCornerShape(30.dp),elevation=CardDefaults.cardElevation(5.dp)) {
+        Box(Modifier.fillMaxSize().background(Brush.linearGradient(palette(p.palette)))) {
+            Column(Modifier.align(Alignment.Center).padding(24.dp),horizontalAlignment=Alignment.CenterHorizontally) {
+                Surface(Modifier.size(104.dp),shape=CircleShape,color=Color.White.copy(alpha=.18f),border=BorderStroke(1.dp,Color.White.copy(alpha=.35f))) {
+                    Box(contentAlignment=Alignment.Center) { Text(p.name.take(1).uppercase(),fontSize=46.sp,color=Color.White,fontWeight=FontWeight.Light) }
+                }
+                Spacer(Modifier.height(20.dp))
+                Text(p.name+", "+p.age,style=MaterialTheme.typography.headlineMedium,color=Color.White,fontWeight=FontWeight.Bold)
+                if(p.city.isNotBlank()) Text(p.city,color=Color.White.copy(alpha=.75f))
+                Spacer(Modifier.height(10.dp))
+                Surface(shape=CircleShape,color=Color.White.copy(alpha=.15f)) {
+                    Text(if(p.kind=="fictional") "FICTIONAL CHARACTER" else "PRIVATE RECORD",Modifier.padding(horizontal=12.dp,vertical=6.dp),color=Color.White,fontSize=10.sp,fontWeight=FontWeight.Bold)
+                }
+                Spacer(Modifier.height(16.dp))
+                Text(p.intent,color=Color(0xFFFFD7E3),fontWeight=FontWeight.SemiBold)
+                Spacer(Modifier.height(10.dp))
+                Text(p.bio.ifBlank{"A little more about this profile is waiting to be added."},color=Color.White,style=MaterialTheme.typography.bodyLarge)
+                Spacer(Modifier.height(16.dp))
+                Text(p.interests.ifBlank{"Interests not added"},color=Color.White.copy(alpha=.78f))
+            }
+            Text("LOVELY  /  LOCAL PROFILE",Modifier.align(Alignment.BottomStart).padding(18.dp),color=Color.White.copy(alpha=.65f),fontSize=10.sp)
+        }
+    }
+}
+
+@Composable private fun Collection(title:String,sub:String,items:List<ProfileEntity>,emptyTitle:String,emptyBody:String,chat:(ProfileEntity)->Unit,edit:(ProfileEntity)->Unit) {
+    Column(Modifier.fillMaxSize().padding(20.dp)) {
+        Header("Your connections",title,sub)
+        if(items.isEmpty()) Empty(emptyTitle,emptyBody)
+        else LazyColumn(verticalArrangement=Arrangement.spacedBy(10.dp)) {
+            items(items,key={it.id}) { p ->
+                Surface(shape=RoundedCornerShape(20.dp),color=MaterialTheme.colorScheme.surface,modifier=Modifier.fillMaxWidth()) {
+                    Row(Modifier.padding(13.dp),verticalAlignment=Alignment.CenterVertically) {
+                        Avatar(p,50)
+                        Column(Modifier.weight(1f).padding(start=12.dp)) {
+                            Text(p.name+", "+p.age,fontWeight=FontWeight.Bold)
+                            Text(p.city.ifBlank{if(p.kind=="real") "Private record" else "Fictional profile"},style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        TextButton(onClick={edit(p)}) { Text("Edit") }
+                        FilledTonalButton(onClick={chat(p)},shape=RoundedCornerShape(13.dp)) { Text(if(p.kind=="real") "Notes" else "Chat") }
                     }
                 }
             }
@@ -126,22 +173,191 @@ private fun SimpleListScreen(title: String, profiles: List<ProfileEntity>, empty
     }
 }
 
-@Composable
-private fun PlaceholderScreen(title: String, detail: String) {
-    Column(Modifier.fillMaxSize().padding(22.dp)) {
-        Text(title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(18.dp))
-        EmptyState("Built natively, one layer at a time", detail)
+@Composable private fun Chats(items:List<ProfileEntity>,active:ProfileEntity?,messages:List<ChatMessageEntity>,select:(ProfileEntity)->Unit,send:(ProfileEntity,String)->Unit,remove:(ProfileEntity)->Unit,back:()->Unit,discover:()->Unit) {
+    var draft by remember(active?.id) { mutableStateOf("") }
+    Column(Modifier.fillMaxSize().padding(16.dp)) {
+        Header("Local conversations","Messages","Fictional dialogue or private notes. Nothing is sent.")
+        if(active==null) {
+            if(items.isEmpty()) Empty("Your conversations live here.","Open a profile from Likes or Matches to start a local conversation.","Explore profiles",discover)
+            else LazyColumn(verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                items(items,key={it.id}) { p ->
+                    Surface(onClick={select(p)},shape=RoundedCornerShape(18.dp),color=MaterialTheme.colorScheme.surface) {
+                        Row(Modifier.fillMaxWidth().padding(13.dp),verticalAlignment=Alignment.CenterVertically) {
+                            Avatar(p,46)
+                            Column(Modifier.weight(1f).padding(start=12.dp)) {
+                                Text(p.name,fontWeight=FontWeight.Bold)
+                                Text(if(p.kind=="real") "Private notes only" else "Fictional · local written replies",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Text("›",fontSize=24.sp,color=MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                }
+            }
+        } else {
+            Row(verticalAlignment=Alignment.CenterVertically) {
+                TextButton(onClick=back) { Text("‹",fontSize=24.sp) }
+                Avatar(active,42)
+                Column(Modifier.weight(1f).padding(start=10.dp)) {
+                    Text(active.name,fontWeight=FontWeight.Bold)
+                    Text(if(active.kind=="real") "Private notes · not connected" else "Fictional · dialogue rules",fontSize=11.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                TextButton(onClick={remove(active)}) { Text("Remove",color=MaterialTheme.colorScheme.error) }
+            }
+            HorizontalDivider(Modifier.padding(vertical=9.dp))
+            if(active.kind=="real") Surface(shape=RoundedCornerShape(12.dp),color=MaterialTheme.colorScheme.tertiaryContainer) {
+                Text("Private notes only. This person is not connected to Lovely. No replies or activity are simulated.",Modifier.padding(10.dp),style=MaterialTheme.typography.bodySmall)
+            }
+            LazyColumn(Modifier.weight(1f).fillMaxWidth(),contentPadding=PaddingValues(vertical=12.dp),verticalArrangement=Arrangement.spacedBy(9.dp)) {
+                if(messages.isEmpty()) item { Empty(if(active.kind=="real") "A private page for your notes." else "Start the conversation.",if(active.kind=="real") "Anything you write stays on this device." else "Replies come only from the dialogue rules saved for this fictional profile.") }
+                items(messages,key={it.id}) { m ->
+                    val mine=m.sender=="me"
+                    Row(Modifier.fillMaxWidth(),horizontalArrangement=if(mine) Arrangement.End else Arrangement.Start) {
+                        Surface(shape=RoundedCornerShape(17.dp),color=if(mine) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,modifier=Modifier.widthIn(max=300.dp)) {
+                            Column(Modifier.padding(12.dp)) {
+                                Text(m.message,color=if(mine) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(SimpleDateFormat("h:mm a",Locale.getDefault()).format(Date(m.createdAt)),Modifier.align(Alignment.End),fontSize=9.sp,color=if(mine) MaterialTheme.colorScheme.onPrimary.copy(alpha=.7f) else MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                }
+            }
+            Row(verticalAlignment=Alignment.CenterVertically) {
+                OutlinedTextField(draft,{draft=it},Modifier.weight(1f),placeholder={Text(if(active.kind=="real") "Write a private note…" else "Write a message…")},shape=RoundedCornerShape(22.dp),maxLines=4)
+                Spacer(Modifier.width(8.dp))
+                FilledIconButton(onClick={if(draft.isNotBlank()){send(active,draft.trim());draft=""}},enabled=draft.isNotBlank()) { Text("↑",fontSize=22.sp) }
+            }
+        }
     }
 }
 
-@Composable
-private fun EmptyState(title: String, detail: String) {
-    Column(Modifier.fillMaxWidth().padding(vertical = 34.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Text("✧", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.displayMedium)
-        Spacer(Modifier.height(12.dp))
-        Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-        Spacer(Modifier.height(6.dp))
-        Text(detail, color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodyMedium)
+@Composable private fun ProfileSettings(profiles:List<ProfileEntity>,own:OwnProfileEntity,p:PreferencesEntity,saveOwn:(OwnProfileEntity)->Unit,savePrefs:(PreferencesEntity)->Unit,add:()->Unit,edit:(ProfileEntity)->Unit,delete:(ProfileEntity)->Unit,reset:()->Unit) {
+    var name by remember(own.name) { mutableStateOf(own.name) }
+    var bio by remember(own.bio) { mutableStateOf(own.bio) }
+    var mine by remember(own.interests) { mutableStateOf(own.interests) }
+    var confirm by remember { mutableStateOf(false) }
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp),verticalArrangement=Arrangement.spacedBy(14.dp)) {
+        Header("Your private space","Your profile.","Manage your profile library and preferences.")
+        Surface(shape=RoundedCornerShape(23.dp),color=MaterialTheme.colorScheme.surface,modifier=Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(9.dp)) {
+                OutlinedTextField(name,{name=it},Modifier.fillMaxWidth(),label={Text("Display name")})
+                OutlinedTextField(bio,{bio=it},Modifier.fillMaxWidth(),label={Text("About me")},minLines=2)
+                OutlinedTextField(mine,{mine=it},Modifier.fillMaxWidth(),label={Text("My interests, comma separated")})
+                Button(onClick={saveOwn(OwnProfileEntity(name=name,bio=bio,interests=mine))},Modifier.fillMaxWidth()) { Text("Save my profile") }
+            }
+        }
+        Surface(shape=RoundedCornerShape(23.dp),color=MaterialTheme.colorScheme.surface,modifier=Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp)) {
+                Row(verticalAlignment=Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) { Text("Profile library",style=MaterialTheme.typography.titleLarge,fontWeight=FontWeight.Bold); Text(profiles.size.toString()+" local profiles",fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant) }
+                    FilledTonalButton(onClick=add) { Text("＋ Add") }
+                }
+                profiles.forEach { profile ->
+                    Row(Modifier.fillMaxWidth().padding(vertical=6.dp),verticalAlignment=Alignment.CenterVertically) {
+                        Avatar(profile,40)
+                        Column(Modifier.weight(1f).padding(start=9.dp)) {
+                            Text(profile.name,fontWeight=FontWeight.SemiBold)
+                            Text(if(profile.kind=="real") "Private record" else "Fictional character",fontSize=11.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        TextButton(onClick={edit(profile)}) { Text("Edit") }
+                        TextButton(onClick={delete(profile)}) { Text("Delete",color=MaterialTheme.colorScheme.error) }
+                    }
+                }
+            }
+        }
+        Surface(shape=RoundedCornerShape(23.dp),color=MaterialTheme.colorScheme.surface,modifier=Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                Text("Discovery preferences",style=MaterialTheme.typography.titleLarge,fontWeight=FontWeight.Bold)
+                Text("Age range: "+p.minAge+"–"+p.maxAge)
+                Slider(p.minAge.toFloat(),{savePrefs(p.copy(minAge=it.toInt().coerceAtMost(p.maxAge)))},valueRange=18f..60f)
+                Slider(p.maxAge.toFloat(),{savePrefs(p.copy(maxAge=it.toInt().coerceAtLeast(p.minAge)))},valueRange=18f..60f)
+                IntentRow(p.intent) { savePrefs(p.copy(intent=it)) }
+                OutlinedTextField(p.values,{savePrefs(p.copy(values=it))},Modifier.fillMaxWidth(),label={Text("Values you care about")})
+                OutlinedTextField(p.lifestyle,{savePrefs(p.copy(lifestyle=it))},Modifier.fillMaxWidth(),label={Text("Lifestyle preferences")})
+                OutlinedTextField(p.personality,{savePrefs(p.copy(personality=it))},Modifier.fillMaxWidth(),label={Text("Personality preferences")})
+            }
+        }
+        Surface(shape=RoundedCornerShape(23.dp),color=MaterialTheme.colorScheme.surface,modifier=Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(7.dp)) {
+                Text("Privacy, by design",style=MaterialTheme.typography.titleLarge,fontWeight=FontWeight.Bold)
+                Privacy("Storage","This device"); Privacy("AI services","Not used"); Privacy("Backend","Not required"); Privacy("Internet permission","Not requested"); Privacy("Real-person records","Private notes only")
+                Text("Local data is not synced or encrypted. Only store information you have permission to keep.",fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                OutlinedButton(onClick={confirm=true},Modifier.fillMaxWidth()) { Text("Reset all local data",color=MaterialTheme.colorScheme.error) }
+            }
+        }
+        if(confirm) AlertDialog(onDismissRequest={confirm=false},title={Text("Reset Lovely?")},text={Text("This deletes local profiles, likes, matches, conversations and preferences, then restores starter profiles.")},confirmButton={TextButton(onClick={confirm=false;reset()}){Text("Reset",color=MaterialTheme.colorScheme.error)}},dismissButton={TextButton(onClick={confirm=false}){Text("Cancel")}})
+    }
+}
+
+@Composable private fun Editor(initial:ProfileEntity?,dismiss:()->Unit,save:(ProfileEntity)->Unit) {
+    var name by remember(initial?.id) { mutableStateOf(initial?.name.orEmpty()) }
+    var age by remember(initial?.id) { mutableStateOf((initial?.age?:25).toString()) }
+    var city by remember(initial?.id) { mutableStateOf(initial?.city.orEmpty()) }
+    var bio by remember(initial?.id) { mutableStateOf(initial?.bio.orEmpty()) }
+    var kind by remember(initial?.id) { mutableStateOf(initial?.kind?:"fictional") }
+    var intent by remember(initial?.id) { mutableStateOf(initial?.intent?:"Long-term") }
+    var tags by remember(initial?.id) { mutableStateOf(initial?.interests.orEmpty()) }
+    var values by remember(initial?.id) { mutableStateOf(initial?.values.orEmpty()) }
+    var life by remember(initial?.id) { mutableStateOf(initial?.lifestyle.orEmpty()) }
+    var traits by remember(initial?.id) { mutableStateOf(initial?.personalityTags.orEmpty()) }
+    var mutual by remember(initial?.id) { mutableStateOf(initial?.likesUser?:false) }
+    var rules by remember(initial?.id) { mutableStateOf(initial?.dialogueRules?:"hello, hi, hey | Hey! Nice to hear from you.") }
+    var fallback by remember(initial?.id) { mutableStateOf(initial?.fallback?:"I haven't written a reply for that yet.") }
+    var error by remember { mutableStateOf("") }
+    AlertDialog(onDismissRequest=dismiss,title={Text(if(initial==null) "Add a profile" else "Edit profile",fontWeight=FontWeight.Bold)},
+        text={Column(Modifier.heightIn(max=550.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+            Row { FilterChip(kind=="fictional",{kind="fictional"},label={Text("Fictional")}); Spacer(Modifier.width(6.dp)); FilterChip(kind=="real",{kind="real";mutual=false},label={Text("Real-person record")}) }
+            OutlinedTextField(name,{name=it},Modifier.fillMaxWidth(),label={Text("Name")})
+            OutlinedTextField(age,{age=it},Modifier.fillMaxWidth(),label={Text("Age · 18 to 99")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Number))
+            OutlinedTextField(city,{city=it},Modifier.fillMaxWidth(),label={Text("City / location")})
+            OutlinedTextField(bio,{bio=it},Modifier.fillMaxWidth(),label={Text("About")},minLines=2)
+            Text("Relationship intention"); IntentRow(intent){intent=it}
+            OutlinedTextField(tags,{tags=it},Modifier.fillMaxWidth(),label={Text("Interests · comma separated")})
+            OutlinedTextField(values,{values=it},Modifier.fillMaxWidth(),label={Text("Values")})
+            OutlinedTextField(life,{life=it},Modifier.fillMaxWidth(),label={Text("Lifestyle")})
+            OutlinedTextField(traits,{traits=it},Modifier.fillMaxWidth(),label={Text("Personality traits")})
+            if(kind=="fictional") {
+                Row(verticalAlignment=Alignment.CenterVertically) { Checkbox(mutual,{mutual=it}); Text("Mutual interest in this fictional story") }
+                OutlinedTextField(rules,{rules=it},Modifier.fillMaxWidth(),label={Text("Dialogue rules")},minLines=4)
+                Text("One rule per line: triggers | reply one; reply two. Optional [familiar] or [after:work] prefix.",fontSize=11.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                OutlinedTextField(fallback,{fallback=it},Modifier.fillMaxWidth(),label={Text("Fallback reply")})
+            } else Text("Private notes only. No simulated interest, messages, activity or matches.",fontSize=12.sp,color=MaterialTheme.colorScheme.tertiary)
+            if(error.isNotBlank()) Text(error,color=MaterialTheme.colorScheme.error)
+        }},
+        confirmButton={Button(onClick={
+            val years=age.toIntOrNull()
+            if(name.isBlank()||years==null||years !in 18..99){error="Enter a name and valid age (18–99).";return@Button}
+            val colors=listOf("rose","sage","blue","plum","gold","coral","lavender","sunset")
+            val color=initial?.palette?:colors[(name.hashCode().toUInt().toLong()%8).toInt()]
+            save(ProfileEntity(initial?.id?:"local-"+System.currentTimeMillis(),name.trim(),years,bio,kind,intent,city,tags,values,life,traits,kind=="fictional"&&mutual,true,initial?.photo.orEmpty(),rules,fallback,color))
+        }) { Text("Save profile") }},dismissButton={TextButton(onClick=dismiss){Text("Cancel")}})
+}
+
+@Composable private fun IntentRow(value:String,onChange:(String)->Unit) {
+    Row(Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(5.dp)) {
+        intents.forEach { FilterChip(value==it,{onChange(it)},label={Text(it,fontSize=11.sp)}) }
+    }
+}
+@Composable private fun Avatar(p:ProfileEntity,size:Int) {
+    Surface(Modifier.size(size.dp),shape=CircleShape,color=palette(p.palette).first()) {
+        Box(contentAlignment=Alignment.Center) { Text(p.name.take(1).uppercase(),color=Color.White,fontSize=(size*.42).sp) }
+    }
+}
+private fun palette(name:String):List<Color> = when(name) {
+    "sage"->listOf(Color(0xFF78917C),Color(0xFF314B43),Color(0xFF19131D))
+    "blue"->listOf(Color(0xFF6687A5),Color(0xFF273A55),Color(0xFF19131D))
+    "plum"->listOf(Color(0xFF9B6D91),Color(0xFF432C4D),Color(0xFF19131D))
+    "gold"->listOf(Color(0xFFB58C5B),Color(0xFF604631),Color(0xFF19131D))
+    "coral"->listOf(Color(0xFFC77C72),Color(0xFF603A46),Color(0xFF19131D))
+    "lavender"->listOf(Color(0xFF9584B8),Color(0xFF43385F),Color(0xFF19131D))
+    "sunset"->listOf(Color(0xFFC07A64),Color(0xFF4C354B),Color(0xFF19131D))
+    else->listOf(Color(0xFFC17A93),Color(0xFF60384F),Color(0xFF19131D))
+}
+@Composable private fun Privacy(a:String,b:String) { Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){Text(a,color=MaterialTheme.colorScheme.onSurfaceVariant);Text(b,fontWeight=FontWeight.SemiBold)} }
+@Composable private fun Empty(title:String,body:String,action:String?=null,onAction:(()->Unit)?=null) {
+    Column(Modifier.fillMaxWidth().padding(vertical=32.dp,horizontal=16.dp),horizontalAlignment=Alignment.CenterHorizontally) {
+        Text("♡",fontSize=46.sp,color=MaterialTheme.colorScheme.primary)
+        Text(title,style=MaterialTheme.typography.titleLarge,fontWeight=FontWeight.Bold)
+        Text(body,color=MaterialTheme.colorScheme.onSurfaceVariant)
+        if(action!=null&&onAction!=null){Spacer(Modifier.height(12.dp));Button(onClick=onAction){Text(action)}}
     }
 }
