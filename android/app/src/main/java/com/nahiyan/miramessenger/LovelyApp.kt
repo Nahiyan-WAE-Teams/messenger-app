@@ -88,7 +88,7 @@ fun LovelyApp(vm: LovelyViewModel) {
         AnimatedContent(Tab.valueOf(tab),Modifier.fillMaxSize().padding(padding),
             transitionSpec={fadeIn()+slideInHorizontally { it/20 } togetherWith fadeOut()+slideOutHorizontally { -it/20 }},label="tab") { page ->
             when(page) {
-                Tab.Discover -> Discover(discover,pref,filters,{filters=!filters},vm::savePreferences,
+                Tab.Discover -> Discover(discover,pref,mine.interests,filters,{filters=!filters},vm::savePreferences,
                     {vm.act(it,"like")},{vm.act(it,"pass")},{add=true})
                 Tab.Likes -> Collection("Your likes","Profiles you chose to keep close.",likes,
                     "No likes yet","When someone catches your eye, tap the heart in Discover.",
@@ -117,7 +117,7 @@ fun LovelyApp(vm: LovelyViewModel) {
     }
 }
 
-@Composable private fun Discover(items:List<ProfileEntity>,p:PreferencesEntity,show:Boolean,toggle:()->Unit,save:(PreferencesEntity)->Unit,like:(ProfileEntity)->Unit,pass:(ProfileEntity)->Unit,add:()->Unit) {
+@Composable private fun Discover(items:List<ProfileEntity>,p:PreferencesEntity,myInterests:String,show:Boolean,toggle:()->Unit,save:(PreferencesEntity)->Unit,like:(ProfileEntity)->Unit,pass:(ProfileEntity)->Unit,add:()->Unit) {
     var index by remember(items) { mutableIntStateOf(0) }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal=18.dp, vertical=18.dp)) {
         Row(verticalAlignment=Alignment.Top) {
@@ -152,7 +152,7 @@ fun LovelyApp(vm: LovelyViewModel) {
         val profile=items.getOrNull(index)
         if(profile==null) Empty("That's everyone for now.","Widen your filters or add a profile to your local collection.","＋ Add a profile",add)
         else {
-            Hero(profile,Modifier.fillMaxWidth().height(560.dp))
+            Hero(profile,Modifier.fillMaxWidth().height(560.dp),DiscoveryRanker.explain(profile, (p.interests+","+myInterests).split(",").map{it.trim().lowercase()}.filter{it.isNotBlank()}.toSet(), p.values.split(",").map{it.trim().lowercase()}.filter{it.isNotBlank()}.toSet(), p.lifestyle.split(",").map{it.trim().lowercase()}.filter{it.isNotBlank()}.toSet(), p.personality.split(",").map{it.trim().lowercase()}.filter{it.isNotBlank()}.toSet()))
             Spacer(Modifier.height(14.dp))
             Row(horizontalArrangement=Arrangement.spacedBy(14.dp),verticalAlignment=Alignment.CenterVertically) {
                 OutlinedButton(onClick={pass(profile);index=0},Modifier.weight(.42f).height(60.dp),
@@ -170,7 +170,7 @@ fun LovelyApp(vm: LovelyViewModel) {
     }
 }
 
-@Composable private fun Hero(p:ProfileEntity,modifier:Modifier=Modifier) {
+@Composable private fun Hero(p:ProfileEntity,modifier:Modifier=Modifier,reasons:List<String> = emptyList()) {
     Card(modifier,shape=RoundedCornerShape(34.dp),elevation=CardDefaults.cardElevation(defaultElevation=10.dp),
         border=BorderStroke(1.dp,Color.White.copy(alpha=.11f))) {
         Box(Modifier.fillMaxSize().background(Brush.linearGradient(palette(p.palette)))) {
