@@ -14,6 +14,15 @@ class OfflineConversationEngineTest {
         dialogueRules = "architecture | Tell me about the building you found."
     )
 
+    @Test fun aSimpleGreetingGetsAnActualGreetingInsteadOfAReflectiveFollowUp() {
+        val seeded = StarterDialogue.apply(profile.copy(id = "ava-morgan", dialogueRules = ""))
+        val result = OfflineConversationEngine.reply(
+            seeded, "hi", "first-meeting", emptyList(), "", 0
+        )
+        assertTrue(result.startsWith("Hey!"))
+        assertFalse(result.contains("turning that over"))
+    }
+
     @Test fun explicitCharacterDialogueRulesTakePriorityOverEmotionalFallback() {
         val result = OfflineConversationEngine.reply(
             profile, "I'm stressed about architecture", "first-meeting", emptyList(), "", 0

@@ -241,7 +241,7 @@ object StarterDialogue {
         "june-kim" to ("design, noodles | I have strong opinions about noodles and moderate evidence." to "I'm mentally rearranging that into a better answer.")
     )
     fun apply(profile: ProfileEntity): ProfileEntity = scripts[profile.id]?.let {
-        profile.copy(dialogueRules = it.first, fallback = it.second)
+        profile.copy(dialogueRules = "hello, hi, hey | Hey! It's nice to hear from you.\n${it.first}", fallback = it.second)
     } ?: profile
 }
 
