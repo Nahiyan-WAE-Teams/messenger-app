@@ -410,7 +410,7 @@ fun LovelyApp(vm: LovelyViewModel) {
     var life by remember(initial?.id) { mutableStateOf(initial?.lifestyle.orEmpty()) }
     var traits by remember(initial?.id) { mutableStateOf(initial?.personalityTags.orEmpty()) }
     var mutual by remember(initial?.id) { mutableStateOf(initial?.likesUser?:false) }
-    var rules by remember(initial?.id) { mutableStateOf(initial?.dialogueRules?:"hello, hi, hey | Hey! Nice to hear from you.") }
+    var ruleEntries by remember(initial?.id) { mutableStateOf(DialogueRuleCodec.parse(initial?.dialogueRules ?: DialogueEngine.DEFAULT_RULES)) }
     var fallback by remember(initial?.id) { mutableStateOf(initial?.fallback?:"I haven't written a reply for that yet.") }
 
     var error by remember { mutableStateOf("") }
@@ -429,9 +429,19 @@ fun LovelyApp(vm: LovelyViewModel) {
             OutlinedTextField(name,{name=it},Modifier.fillMaxWidth(),label={Text("Name")})
             OutlinedTextField(age,{age=it},Modifier.fillMaxWidth(),label={Text("Age · 18 to 99")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Number))
             OutlinedTextField(city,{city=it},Modifier.fillMaxWidth(),label={Text("City / location")})
-            Row(verticalAlignment=Alignment.CenterVertically) {
-                OutlinedButton(onClick={photoPicker.launch("image/*")}) { Text(if(photo.isBlank()) "Choose profile photo" else "Change photo") }
-                if(photo.isNotBlank()) TextButton(onClick={photo=""}) { Text("Remove photo") }
+            Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)) {
+                if(photo.isNotBlank()) ProfileImage(photo,Modifier.size(76.dp).clip(CircleShape))
+                else Surface(Modifier.size(76.dp),shape=CircleShape,color=palette(initial?.palette ?: "rose").first()) {
+                    Box(contentAlignment=Alignment.Center) { Text(name.take(1).ifBlank{"?"}.uppercase(),color=Color.White,fontSize=28.sp) }
+                }
+                Column(Modifier.weight(1f)) {
+                    Text(if(photo.isBlank()) "Portrait not set" else "Portrait ready",fontWeight=FontWeight.SemiBold)
+                    Text("Stored on this device only.",fontSize=10.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row {
+                        TextButton(onClick={photoPicker.launch("image/*")}) { Text(if(photo.isBlank()) "Add photo" else "Change") }
+                        if(photo.isNotBlank()) TextButton(onClick={photo=""}) { Text("Remove") }
+                    }
+                }
             }
             OutlinedTextField(bio,{bio=it},Modifier.fillMaxWidth(),label={Text("About")},minLines=2)
             Text("Relationship intention"); IntentRow(intent){intent=it}
@@ -441,9 +451,22 @@ fun LovelyApp(vm: LovelyViewModel) {
             OutlinedTextField(traits,{traits=it},Modifier.fillMaxWidth(),label={Text("Personality traits")})
             if(kind=="fictional") {
                 Row(verticalAlignment=Alignment.CenterVertically) { Checkbox(mutual,{mutual=it}); Text("Mutual interest in this fictional story") }
-                OutlinedTextField(rules,{rules=it},Modifier.fillMaxWidth(),label={Text("Dialogue rules")},minLines=4)
-                Text("One rule per line: triggers | reply one; reply two. Optional [familiar] or [after:work] prefix.",fontSize=11.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
-                OutlinedTextField(fallback,{fallback=it},Modifier.fillMaxWidth(),label={Text("Fallback reply")})
+                Text("Conversation builder",style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.Bold)
+                Text("Choose exactly what she says when a message matches a trigger. Triggers can be words or short phrases, separated by commas.",fontSize=11.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                ruleEntries.forEachIndexed { index, rule ->
+                    Surface(shape=RoundedCornerShape(16.dp),color=MaterialTheme.colorScheme.surfaceVariant.copy(alpha=.45f),modifier=Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(11.dp),verticalArrangement=Arrangement.spacedBy(7.dp)) {
+                            Row(verticalAlignment=Alignment.CenterVertically) {
+                                Text("RULE ${index+1}",fontSize=10.sp,fontWeight=FontWeight.Bold,letterSpacing=1.sp,color=MaterialTheme.colorScheme.primary,modifier=Modifier.weight(1f))
+                                TextButton(onClick={ruleEntries=ruleEntries.toMutableList().also{it.removeAt(index)}}) { Text("Remove",color=MaterialTheme.colorScheme.error) }
+                            }
+                            OutlinedTextField(rule.trigger,{value->ruleEntries=ruleEntries.toMutableList().also{it[index]=it[index].copy(trigger=value)}},Modifier.fillMaxWidth(),label={Text("When the user says…")},placeholder={Text("hi, hello, hey")},singleLine=true)
+                            OutlinedTextField(rule.reply,{value->ruleEntries=ruleEntries.toMutableList().also{it[index]=it[index].copy(reply=value)}},Modifier.fillMaxWidth(),label={Text("She replies…")},placeholder={Text("Hey! Good to hear from you.")},minLines=2)
+                        }
+                    }
+                }
+                OutlinedButton(onClick={ruleEntries=ruleEntries+DialogueRuleEditorEntry("","")},Modifier.fillMaxWidth()) { Text("＋ Add conversation rule") }
+                OutlinedTextField(fallback,{fallback=it},Modifier.fillMaxWidth(),label={Text("If nothing matches, she says…")})
             } else Text("Private notes only. No simulated interest, messages, activity or matches.",fontSize=12.sp,color=MaterialTheme.colorScheme.tertiary)
             if(error.isNotBlank()) Text(error,color=MaterialTheme.colorScheme.error)
         }},
@@ -452,7 +475,7 @@ fun LovelyApp(vm: LovelyViewModel) {
             if(name.isBlank()||years==null||years !in 18..99){error="Enter a name and valid age (18–99).";return@Button}
             val colors=listOf("rose","sage","blue","plum","gold","coral","lavender","sunset")
             val color=initial?.palette?:colors[(name.hashCode().toUInt().toLong()%8).toInt()]
-            save(ProfileEntity(initial?.id?:"local-"+System.currentTimeMillis(),name.trim(),years,bio,kind,intent,city,tags,values,life,traits,kind=="fictional"&&mutual,true,photo,rules,fallback,color))
+            save(ProfileEntity(initial?.id?:"local-"+System.currentTimeMillis(),name.trim(),years,bio,kind,intent,city,tags,values,life,traits,kind=="fictional"&&mutual,true,photo,DialogueRuleCodec.serialize(ruleEntries),fallback,color))
         }) { Text("Save profile") }},dismissButton={TextButton(onClick=dismiss){Text("Cancel")}})
 }
 
