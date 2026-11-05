@@ -34,4 +34,21 @@ class DiscoveryRankerTest {
         assertEquals(listOf("Shared interests", "Similar values"), reasons)
     }
 
+    @Test fun bundledCharactersHaveDistinctOfflineVoices() {
+        val ava = StarterDialogue.apply(ProfileEntity("ava-morgan", "Ava Morgan", 25, "Bio"))
+        val nina = StarterDialogue.apply(ProfileEntity("nina-park", "Nina Park", 25, "Bio"))
+        assertNotEquals(ava.dialogueRules, nina.dialogueRules)
+        assertNotEquals(ava.fallback, nina.fallback)
+        assertTrue(DialogueEngine.reply("architecture", ava.dialogueRules, ava.fallback, "first-meeting", emptyList(), "").contains("buildings"))
+        assertTrue(DialogueEngine.reply("reading", nina.dialogueRules, nina.fallback, "first-meeting", emptyList(), "").contains("reading"))
+    }
+
+    @Test fun replySelectionAvoidsRepeatingRecentCharacterReply() {
+        assertEquals("Second reply", DialogueEngine.reply("hello", "hello | First reply;Second reply", "fallback", "first-meeting", listOf("First reply"), ""))
+    }
+
+    @Test fun unmatchedMessageUsesCharacterSpecificFallback() {
+        val fallback = "I was making tea. What happened?"
+        assertEquals(fallback, DialogueEngine.reply("xyzzy", "hello | Hi", fallback, "first-meeting", emptyList(), ""))
+    }
 }

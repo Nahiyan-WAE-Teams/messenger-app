@@ -80,6 +80,7 @@ interface LovelyDao {
     @Query("SELECT * FROM relationships") fun observeRelationships(): Flow<List<RelationshipEntity>>
     @Query("SELECT COUNT(*) FROM profiles") suspend fun profileCount(): Int
     @Query("SELECT id FROM profiles") suspend fun profileIds(): List<String>
+    @Query("SELECT * FROM profiles WHERE id = :id LIMIT 1") suspend fun profileById(id: String): ProfileEntity?
     @Query("SELECT * FROM preferences WHERE id = 1 LIMIT 1") suspend fun getPreferences(): PreferencesEntity?
     @Query("SELECT * FROM own_profile WHERE id = 1 LIMIT 1") suspend fun getOwnProfile(): OwnProfileEntity?
     @Query("SELECT * FROM chat_messages WHERE profileId = :profileId ORDER BY createdAt") fun observeConversation(profileId: String): Flow<List<ChatMessageEntity>>
@@ -167,7 +168,14 @@ class LovelyRepository(private val dao: LovelyDao) {
             ProfileEntity("wren-parker", "Wren Parker", 29, "Wildflower walks, ceramics that lean slightly to the left, and thoughtful silences.", interests="Nature, Pottery, Poetry, Hiking", values="Patience, Authenticity", personalityTags="Calm, Creative", lifestyle="Outdoors, Quiet", city="Asheville, NC", palette="sage"),
             ProfileEntity("june-kim", "June Kim", 27, "Product designer who loves a clever interface, a perfect bowl of noodles, and low-key Sundays.", interests="Design, Technology, Food, Movies", values="Craft, Kindness", personalityTags="Curious, Direct", lifestyle="Balanced, Creative", city="Seattle, WA", palette="plum")
         )
-        dao.upsertProfiles(starterProfiles.filter { it.id !in existingIds })
+        val scripted = starterProfiles.map(StarterDialogue::apply)
+        dao.upsertProfiles(scripted.filter { it.id !in existingIds })
+        scripted.filter { it.id in existingIds }.forEach { seed ->
+            val current = dao.profileById(seed.id) ?: return@forEach
+            if (current.kind == "fictional" && current.dialogueRules == DialogueEngine.DEFAULT_RULES && current.fallback == DialogueEngine.DEFAULT_FALLBACK) {
+                dao.upsertProfile(current.copy(dialogueRules = seed.dialogueRules, fallback = seed.fallback))
+            }
+        }
         if (dao.getPreferences() == null) dao.upsertPreferences(PreferencesEntity())
         if (dao.getOwnProfile() == null) dao.upsertOwnProfile(OwnProfileEntity())
     }
@@ -205,7 +213,42 @@ class LovelyRepository(private val dao: LovelyDao) {
     }
 }
 
+object StarterDialogue {
+    private val scripts = mapOf(
+        "ava-morgan" to ("architecture, buildings | Old buildings have such good stories. I always notice the details." to "I was thinking about a building I want to visit. What's up?"),
+        "nina-park" to ("books, reading | What are you reading lately? I love seeing what people pick for themselves." to "I'm letting that thought develop. Tell me a little more."),
+        "zoe-carter" to ("music, concert | I always want to know which bands are good live." to "I got distracted by something happening outside. Continue."),
+        "maya-ellis" to ("plants, garden | One new leaf can make my whole day. Plant people get it." to "I was checking on my plants. What were you saying?"),
+        "sophie-reed" to ("travel, hiking | I keep a list of places I'd like to get lost in." to "I'm deciding between a mountain story and a food story."),
+        "ella-brooks" to ("design, stars | I notice typography everywhere. It's a professional hazard." to "I was redesigning that thought in my head. Try me again."),
+        "ruby-james" to ("music, cooking | A good bass line makes cooking twice as fun." to "I'm in the kitchen. What's on your mind?"),
+        "jules-bennett" to ("honest, truth | I'd rather hear an awkward truth than a polished half-answer." to "I don't have a clever line for that. Say more?"),
+        "harper-lane" to ("furniture, vintage | Old furniture has personality, and usually a few questionable repairs." to "I got flour on my phone again. What's up?"),
+        "olivia-chen" to ("museum, photography | I can spend an afternoon following one tiny detail around a museum." to "I have an observation forming. Give me a second."),
+        "tessa-brooks" to ("running, hiking | The first ten minutes of a run are mostly negotiations with myself." to "I may still be catching my breath. What's happening?"),
+        "naomi-ellis" to ("dinner, cooking | I always cook for more people than are coming. Leftovers are a love language." to "I'm planning a dinner menu. Give me a moment."),
+        "claire-bennett" to ("science, space | The universe is absurdly interesting. I have too many questions." to "I want to answer that properly, not guess."),
+        "dani-rivera" to ("dance, adventure | A dance class is a reset button with better music." to "I started planning three things at once. Pick one thread."),
+        "morgan-price" to ("playlist, music | I make playlists for people. It's how I pay attention." to "I'm choosing the right song for this conversation."),
+        "avery-cole" to ("plants, baking | My apartment is becoming a greenhouse with a rent payment." to "I was waiting for something to come out of the oven."),
+        "leah-foster" to ("climbing, outdoors | Climbing is problem-solving with chalk everywhere. I love it." to "Just got back from the climbing gym. My arms are negotiating."),
+        "riley-james" to ("vintage, records | Thrift stores are treasure hunts where intuition is the map." to "I found something interesting and I'm working out how to explain it."),
+        "eden-walsh" to ("books, poetry | Tell me a book you wish you could read again for the first time." to "I'm turning that over in my head. No rush."),
+        "paige-turner" to ("skate, comics | I'm better at trying new tricks than landing them. Yet." to "I have an oddly specific fact for this moment."),
+        "quinn-hayes" to ("radio, train | Radio is magic: a voice makes a stranger feel like company." to "I'm editing my answer like it's going on air."),
+        "stella-monroe" to ("yoga, board game | I'm friendly until the board game starts. Then I focus." to "I'm deciding whether to be gracious or competitive."),
+        "wren-parker" to ("nature, pottery | I like noticing what's growing in the cracks and along the edges." to "I'm taking a quiet minute with that thought."),
+        "june-kim" to ("design, noodles | I have strong opinions about noodles and moderate evidence." to "I'm mentally rearranging that into a better answer.")
+    )
+    fun apply(profile: ProfileEntity): ProfileEntity = scripts[profile.id]?.let {
+        profile.copy(dialogueRules = it.first, fallback = it.second)
+    } ?: profile
+}
+
 object DialogueEngine {
+    const val DEFAULT_RULES = "hello, hi, hey | Hey! Nice to hear from you."
+    const val DEFAULT_FALLBACK = "I haven't written a reply for that yet. What else is on your mind?"
+
     private fun norm(s: String) = java.text.Normalizer.normalize(s.lowercase(), java.text.Normalizer.Form.NFKC)
         .replace(Regex("[^\\p{L}\\p{N}\\s']"), " ").replace(Regex("\\s+"), " ").trim()
     fun reply(message: String, rulesText: String, fallback: String, stage: String, recentReplies: List<String>, previousMessage: String): String {
