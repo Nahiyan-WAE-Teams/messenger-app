@@ -104,7 +104,8 @@ fun LovelyApp(vm: LovelyViewModel) {
                     "No mutual matches yet","Edit a fictional profile and enable mutual interest to test a local match.",
                     {activeId=it.id;tab=Tab.Chats.name},{editor=it})
                 Tab.Chats -> Chats(chatProfiles,active,activeMessages,{activeId=it.id},
-                    {p,msg->vm.send(p,msg)},{vm.removeConversation(it.id);activeId=""},{activeId=""},{tab=Tab.Discover.name})
+                    {p,msg->vm.send(p,msg)},{vm.removeConversation(it.id);activeId=""},{activeId=""},{tab=Tab.Discover.name},
+                    {editor=it})
                 Tab.Profile -> ProfileSettings(profiles,mine,pref,vm::saveOwn,vm::savePreferences,
                     {add=true},{editor=it},vm::delete,vm::reset)
             }
@@ -283,7 +284,7 @@ fun LovelyApp(vm: LovelyViewModel) {
     }
 }
 
-@Composable private fun Chats(items:List<ProfileEntity>,active:ProfileEntity?,messages:List<ChatMessageEntity>,select:(ProfileEntity)->Unit,send:(ProfileEntity,String)->Unit,remove:(ProfileEntity)->Unit,back:()->Unit,discover:()->Unit) {
+@Composable private fun Chats(items:List<ProfileEntity>,active:ProfileEntity?,messages:List<ChatMessageEntity>,select:(ProfileEntity)->Unit,send:(ProfileEntity,String)->Unit,remove:(ProfileEntity)->Unit,back:()->Unit,discover:()->Unit,edit:(ProfileEntity)->Unit) {
     var draft by remember(active?.id) { mutableStateOf("") }
     Column(Modifier.fillMaxSize().padding(16.dp)) {
         Header("Local conversations","Messages","Fictional dialogue or private notes. Nothing is sent.")
@@ -311,6 +312,7 @@ fun LovelyApp(vm: LovelyViewModel) {
                     Text(active.name,fontWeight=FontWeight.Bold)
                     Text(if(active.kind=="real") "Private notes · not connected" else "Fictional · dialogue rules",fontSize=11.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+                TextButton(onClick={edit(active)}) { Text("Edit",color=MaterialTheme.colorScheme.primary) }
                 TextButton(onClick={remove(active)}) { Text("Clear",color=MaterialTheme.colorScheme.error) }
             }
             HorizontalDivider(Modifier.padding(vertical=9.dp))

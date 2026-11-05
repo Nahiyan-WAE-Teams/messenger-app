@@ -22,6 +22,10 @@ class ConversationRuleCodecTest {
         assertEquals("Hey!", DialogueEngine.matchingReply("hello", raw, "first-meeting", emptyList(), ""))
     }
 
+    @Test fun emptyRulesStayEmptySoTheUserCanChooseNoAutomaticReplies() {
+        assertTrue(DialogueRuleCodec.parse("").isEmpty())
+    }
+
     @Test fun ignoresIncompleteRowsInsteadOfSavingBrokenRules() {
         val raw = DialogueRuleCodec.serialize(listOf(
             DialogueRuleEditorEntry("", "No trigger"),
