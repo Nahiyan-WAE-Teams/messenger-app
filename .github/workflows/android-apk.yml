@@ -32,9 +32,10 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
-      - name: Verify native-only source and no network permission
+      - name: Verify native app and intentional internet permission
         run: |
-          ! grep -R -n -E 'WebView|androidx\.webkit|INTERNET' android/app/src/main
+          ! grep -R -n -E 'WebView|androidx\.webkit' android/app/src/main
+          grep -q 'android.permission.INTERNET' android/app/src/main/AndroidManifest.xml
           test -f android/app/src/main/java/com/nahiyan/miramessenger/MainActivity.kt
       - name: Run native unit tests
         working-directory: android
@@ -45,7 +46,7 @@ jobs:
       - name: Verify APK and permissions
         run: |
           test -s android/app/build/outputs/apk/debug/app-debug.apk
-          ! aapt dump permissions android/app/build/outputs/apk/debug/app-debug.apk | grep -q 'android.permission.INTERNET'
+          aapt dump permissions android/app/build/outputs/apk/debug/app-debug.apk | grep -q 'android.permission.INTERNET'
       - uses: actions/upload-artifact@v4
         with:
           name: lovely-native-android-apk
