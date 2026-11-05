@@ -156,6 +156,7 @@ class LovelyRepository(private val dao: LovelyDao) {
     suspend fun act(profile: ProfileEntity, action: String) = dao.act(profile, action, System.currentTimeMillis())
     suspend fun saveProfile(profile: ProfileEntity) = dao.upsertProfile(profile)
     suspend fun deleteProfile(id: String) = dao.removeProfile(id)
+    suspend fun removeConversation(id: String) = dao.deleteMessages(id)
     suspend fun savePreferences(p: PreferencesEntity) = dao.upsertPreferences(p)
     suspend fun saveOwn(p: OwnProfileEntity) = dao.upsertOwnProfile(p)
     suspend fun send(profile: ProfileEntity, text: String) {

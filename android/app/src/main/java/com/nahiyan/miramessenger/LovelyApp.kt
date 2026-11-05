@@ -1,7 +1,14 @@
 package com.nahiyan.miramessenger
 
+import android.graphics.BitmapFactory
+import android.util.Base64
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.foundation.*
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.*
 import androidx.compose.foundation.shape.CircleShape
@@ -72,7 +79,7 @@ fun LovelyApp(vm: LovelyViewModel) {
                     "No mutual matches yet","Edit a fictional profile and enable mutual interest to test a local match.",
                     {activeId=it.id;tab=Tab.Chats.name},{editor=it})
                 Tab.Chats -> Chats(chatProfiles,active,activeMessages,{activeId=it.id},
-                    {p,msg->vm.send(p,msg)},{vm.delete(it);activeId=""},{activeId=""},{tab=Tab.Discover.name})
+                    {p,msg->vm.send(p,msg)},{vm.removeConversation(it.id);activeId=""},{activeId=""},{tab=Tab.Discover.name})
                 Tab.Profile -> ProfileSettings(profiles,mine,pref,vm::saveOwn,vm::savePreferences,
                     {add=true},{editor=it},vm::delete,vm::reset)
             }
@@ -130,7 +137,7 @@ fun LovelyApp(vm: LovelyViewModel) {
         Box(Modifier.fillMaxSize().background(Brush.linearGradient(palette(p.palette)))) {
             Column(Modifier.align(Alignment.Center).padding(24.dp),horizontalAlignment=Alignment.CenterHorizontally) {
                 Surface(Modifier.size(104.dp),shape=CircleShape,color=Color.White.copy(alpha=.18f),border=BorderStroke(1.dp,Color.White.copy(alpha=.35f))) {
-                    Box(contentAlignment=Alignment.Center) { Text(p.name.take(1).uppercase(),fontSize=46.sp,color=Color.White,fontWeight=FontWeight.Light) }
+                    Box(contentAlignment=Alignment.Center) { if(p.photo.isNotBlank()) ProfileImage(p.photo,Modifier.fillMaxSize().clip(CircleShape)) else Text(p.name.take(1).uppercase(),fontSize=46.sp,color=Color.White,fontWeight=FontWeight.Light) }
                 }
                 Spacer(Modifier.height(20.dp))
                 Text(p.name+", "+p.age,style=MaterialTheme.typography.headlineMedium,color=Color.White,fontWeight=FontWeight.Bold)
@@ -201,7 +208,7 @@ fun LovelyApp(vm: LovelyViewModel) {
                     Text(active.name,fontWeight=FontWeight.Bold)
                     Text(if(active.kind=="real") "Private notes · not connected" else "Fictional · dialogue rules",fontSize=11.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                TextButton(onClick={remove(active)}) { Text("Remove",color=MaterialTheme.colorScheme.error) }
+                TextButton(onClick={remove(active)}) { Text("Clear",color=MaterialTheme.colorScheme.error) }
             }
             HorizontalDivider(Modifier.padding(vertical=9.dp))
             if(active.kind=="real") Surface(shape=RoundedCornerShape(12.dp),color=MaterialTheme.colorScheme.tertiaryContainer) {
@@ -302,6 +309,16 @@ fun LovelyApp(vm: LovelyViewModel) {
     var mutual by remember(initial?.id) { mutableStateOf(initial?.likesUser?:false) }
     var rules by remember(initial?.id) { mutableStateOf(initial?.dialogueRules?:"hello, hi, hey | Hey! Nice to hear from you.") }
     var fallback by remember(initial?.id) { mutableStateOf(initial?.fallback?:"I haven't written a reply for that yet.") }
+
+    var photo by remember(initial?.id) { mutableStateOf(initial?.photo.orEmpty()) }
+    val context = LocalContext.current
+    val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) {
+            val bytes = runCatching { context.contentResolver.openInputStream(uri)?.use { it.readBytes() } }.getOrNull()
+            if (bytes != null && bytes.size <= 1_500_000) photo = Base64.encodeToString(bytes, Base64.NO_WRAP)
+            else error = "Choose a photo smaller than 1.5 MB."
+        }
+    }
     var error by remember { mutableStateOf("") }
     AlertDialog(onDismissRequest=dismiss,title={Text(if(initial==null) "Add a profile" else "Edit profile",fontWeight=FontWeight.Bold)},
         text={Column(Modifier.heightIn(max=550.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(8.dp)) {
@@ -309,6 +326,10 @@ fun LovelyApp(vm: LovelyViewModel) {
             OutlinedTextField(name,{name=it},Modifier.fillMaxWidth(),label={Text("Name")})
             OutlinedTextField(age,{age=it},Modifier.fillMaxWidth(),label={Text("Age · 18 to 99")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Number))
             OutlinedTextField(city,{city=it},Modifier.fillMaxWidth(),label={Text("City / location")})
+            Row(verticalAlignment=Alignment.CenterVertically) {
+                OutlinedButton(onClick={photoPicker.launch("image/*")}) { Text(if(photo.isBlank()) "Choose profile photo" else "Change photo") }
+                if(photo.isNotBlank()) TextButton(onClick={photo=""}) { Text("Remove photo") }
+            }
             OutlinedTextField(bio,{bio=it},Modifier.fillMaxWidth(),label={Text("About")},minLines=2)
             Text("Relationship intention"); IntentRow(intent){intent=it}
             OutlinedTextField(tags,{tags=it},Modifier.fillMaxWidth(),label={Text("Interests · comma separated")})
@@ -328,7 +349,7 @@ fun LovelyApp(vm: LovelyViewModel) {
             if(name.isBlank()||years==null||years !in 18..99){error="Enter a name and valid age (18–99).";return@Button}
             val colors=listOf("rose","sage","blue","plum","gold","coral","lavender","sunset")
             val color=initial?.palette?:colors[(name.hashCode().toUInt().toLong()%8).toInt()]
-            save(ProfileEntity(initial?.id?:"local-"+System.currentTimeMillis(),name.trim(),years,bio,kind,intent,city,tags,values,life,traits,kind=="fictional"&&mutual,true,initial?.photo.orEmpty(),rules,fallback,color))
+            save(ProfileEntity(initial?.id?:"local-"+System.currentTimeMillis(),name.trim(),years,bio,kind,intent,city,tags,values,life,traits,kind=="fictional"&&mutual,true,photo,rules,fallback,color))
         }) { Text("Save profile") }},dismissButton={TextButton(onClick=dismiss){Text("Cancel")}})
 }
 
@@ -337,9 +358,18 @@ fun LovelyApp(vm: LovelyViewModel) {
         intents.forEach { FilterChip(value==it,{onChange(it)},label={Text(it,fontSize=11.sp)}) }
     }
 }
-@Composable private fun Avatar(p:ProfileEntity,size:Int) {
+@Composable private fun ProfileImage(data:String,modifier:Modifier=Modifier) {
+    val bitmap = remember(data) {
+        runCatching {
+            val bytes = Base64.decode(data, Base64.DEFAULT)
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+        }.getOrNull()
+    }
+    if (bitmap != null) Image(bitmap, contentDescription="Profile photo", modifier=modifier, contentScale=ContentScale.Crop)
+}
+\n@Composable private fun Avatar(p:ProfileEntity,size:Int) {
     Surface(Modifier.size(size.dp),shape=CircleShape,color=palette(p.palette).first()) {
-        Box(contentAlignment=Alignment.Center) { Text(p.name.take(1).uppercase(),color=Color.White,fontSize=(size*.42).sp) }
+        Box(contentAlignment=Alignment.Center) { if(p.photo.isNotBlank()) ProfileImage(p.photo,Modifier.fillMaxSize().clip(CircleShape)) else Text(p.name.take(1).uppercase(),color=Color.White,fontSize=(size*.42).sp) }
     }
 }
 private fun palette(name:String):List<Color> = when(name) {
