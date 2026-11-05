@@ -162,27 +162,58 @@ fun LovelyApp(vm: LovelyViewModel) {
 }
 
 @Composable private fun Hero(p:ProfileEntity,modifier:Modifier=Modifier) {
-    Card(modifier,shape=RoundedCornerShape(30.dp),elevation=CardDefaults.cardElevation(5.dp)) {
+    Card(modifier,shape=RoundedCornerShape(34.dp),elevation=CardDefaults.cardElevation(defaultElevation=10.dp),
+        border=BorderStroke(1.dp,Color.White.copy(alpha=.11f))) {
         Box(Modifier.fillMaxSize().background(Brush.linearGradient(palette(p.palette)))) {
-            Column(Modifier.align(Alignment.Center).padding(24.dp),horizontalAlignment=Alignment.CenterHorizontally) {
-                Surface(Modifier.size(104.dp),shape=CircleShape,color=Color.White.copy(alpha=.18f),border=BorderStroke(1.dp,Color.White.copy(alpha=.35f))) {
-                    Box(contentAlignment=Alignment.Center) { if(p.photo.isNotBlank()) ProfileImage(p.photo,Modifier.fillMaxSize().clip(CircleShape)) else Text(p.name.take(1).uppercase(),fontSize=46.sp,color=Color.White,fontWeight=FontWeight.Light) }
-                }
-                Spacer(Modifier.height(20.dp))
-                Text(p.name+", "+p.age,style=MaterialTheme.typography.headlineMedium,color=Color.White,fontWeight=FontWeight.Bold)
-                if(p.city.isNotBlank()) Text(p.city,color=Color.White.copy(alpha=.75f))
-                Spacer(Modifier.height(10.dp))
-                Surface(shape=CircleShape,color=Color.White.copy(alpha=.15f)) {
-                    Text(if(p.kind=="fictional") "FICTIONAL CHARACTER" else "PRIVATE RECORD",Modifier.padding(horizontal=12.dp,vertical=6.dp),color=Color.White,fontSize=10.sp,fontWeight=FontWeight.Bold)
-                }
-                Spacer(Modifier.height(16.dp))
-                Text(p.intent,color=Color(0xFFFFD7E3),fontWeight=FontWeight.SemiBold)
-                Spacer(Modifier.height(10.dp))
-                Text(p.bio.ifBlank{"A little more about this profile is waiting to be added."},color=Color.White,style=MaterialTheme.typography.bodyLarge)
-                Spacer(Modifier.height(16.dp))
-                Text(p.interests.ifBlank{"Interests not added"},color=Color.White.copy(alpha=.78f))
+            if(p.photo.isNotBlank()) ProfileImage(p.photo,Modifier.fillMaxSize())
+            else {
+                Box(Modifier.align(Alignment.TopEnd).padding(top=52.dp,end=22.dp).size(190.dp)
+                    .clip(CircleShape).background(Brush.radialGradient(listOf(Color.White.copy(alpha=.16f),Color.Transparent))))
+                Text("L",Modifier.align(Alignment.TopEnd).padding(top=36.dp,end=24.dp),
+                    fontSize=190.sp,fontWeight=FontWeight.Black,color=Color.White.copy(alpha=.045f),lineHeight=180.sp)
             }
-            Text("LOVELY  /  LOCAL PROFILE",Modifier.align(Alignment.BottomStart).padding(18.dp),color=Color.White.copy(alpha=.65f),fontSize=10.sp)
+            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(
+                0f to Color.Black.copy(alpha=if(p.photo.isNotBlank()) .08f else .04f),
+                .34f to Color.Transparent,
+                .58f to Color(0xFF130D17).copy(alpha=.52f),
+                1f to Color(0xFF100B13).copy(alpha=.98f)
+            )))
+            Row(Modifier.align(Alignment.TopStart).fillMaxWidth().padding(18.dp),verticalAlignment=Alignment.CenterVertically) {
+                Surface(shape=CircleShape,color=Color.Black.copy(alpha=.28f),border=BorderStroke(1.dp,Color.White.copy(alpha=.17f))) {
+                    Text(if(p.kind=="fictional") "✦  FICTIONAL PROFILE" else "◉  PRIVATE RECORD",
+                        Modifier.padding(horizontal=13.dp,vertical=9.dp),color=Color.White,fontSize=9.sp,fontWeight=FontWeight.Bold,letterSpacing=1.sp)
+                }
+                Spacer(Modifier.weight(1f))
+                Surface(shape=CircleShape,color=Color.Black.copy(alpha=.25f)) {
+                    Text("LOCAL",Modifier.padding(horizontal=12.dp,vertical=8.dp),color=Color.White.copy(alpha=.85f),fontSize=9.sp,fontWeight=FontWeight.Bold,letterSpacing=1.sp)
+                }
+            }
+            Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(horizontal=23.dp, vertical=25.dp),
+                verticalArrangement=Arrangement.spacedBy(10.dp)) {
+                if(p.city.isNotBlank()) Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                    Text("⌖",fontSize=14.sp,color=Color.White.copy(alpha=.8f))
+                    Text(p.city,color=Color.White.copy(alpha=.82f),fontSize=12.sp,fontWeight=FontWeight.Medium)
+                }
+                Text(p.name+", "+p.age,style=MaterialTheme.typography.headlineLarge,color=Color.White,
+                    fontWeight=FontWeight.ExtraBold,letterSpacing=(-.8).sp,lineHeight=39.sp)
+                Surface(shape=CircleShape,color=Color.White.copy(alpha=.13f),border=BorderStroke(1.dp,Color.White.copy(alpha=.16f))) {
+                    Text(p.intent.ifBlank{"Open to a connection"},Modifier.padding(horizontal=12.dp,vertical=7.dp),
+                        color=Color(0xFFFFD9E4),fontSize=11.sp,fontWeight=FontWeight.SemiBold)
+                }
+                Text(p.bio.ifBlank{"A little more about this profile is waiting to be added."},
+                    color=Color.White.copy(alpha=.94f),style=MaterialTheme.typography.bodyLarge,lineHeight=23.sp)
+                val tags=p.interests.split(",").map{it.trim()}.filter{it.isNotBlank()}.take(4)
+                if(tags.isNotEmpty()) Row(horizontalArrangement=Arrangement.spacedBy(7.dp),verticalAlignment=Alignment.CenterVertically) {
+                    tags.forEach { tag ->
+                        Surface(shape=CircleShape,color=Color.White.copy(alpha=.12f),border=BorderStroke(.7.dp,Color.White.copy(alpha=.13f))) {
+                            Text(tag,Modifier.padding(horizontal=10.dp,vertical=7.dp),fontSize=10.sp,color=Color.White.copy(alpha=.92f),fontWeight=FontWeight.Medium)
+                        }
+                    }
+                }
+                Spacer(Modifier.height(2.dp))
+                Text("A STORY THAT STARTS WITH A HELLO",fontSize=9.sp,letterSpacing=1.7.sp,
+                    color=Color.White.copy(alpha=.55f),fontWeight=FontWeight.Bold)
+            }
         }
     }
 }
