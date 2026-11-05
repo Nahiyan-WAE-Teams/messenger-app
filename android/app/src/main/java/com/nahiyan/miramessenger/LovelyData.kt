@@ -193,7 +193,7 @@ class LovelyRepository(private val dao: LovelyDao) {
     suspend fun removeConversation(id: String) = dao.deleteMessages(id)
     suspend fun savePreferences(p: PreferencesEntity) = dao.upsertPreferences(p)
     suspend fun saveOwn(p: OwnProfileEntity) = dao.upsertOwnProfile(p)
-    suspend fun send(profile: ProfileEntity, text: String) {
+    suspend fun send(profile: ProfileEntity, text: String, aiConfig: AiRuntimeConfig? = null) {
         val now = System.currentTimeMillis()
         dao.insertMessage(ChatMessageEntity(profileId=profile.id, sender="me", message=text, createdAt=now))
         if (profile.kind == "fictional") {
@@ -207,7 +207,15 @@ class LovelyRepository(private val dao: LovelyDao) {
                 previous.exchangeCount >= 1 -> "getting-to-know"
                 else -> "first-meeting"
             }
-            val reply = OfflineConversationEngine.reply(profile, text, stage, recentReplies, priorUser, previous.exchangeCount)
+            val matchedRule = DialogueEngine.matchingReply(text, profile.dialogueRules, stage, recentReplies, priorUser)
+            val config = aiConfig
+            val useAi = config != null && AiConversationRouter.shouldCallAi(config.preferences.mode, matchedRule, config.apiKey.isNotBlank())
+            val reply = when {
+                AiConversationRouter.shouldUseAuthoredRule(config?.preferences?.mode ?: ConversationMode.LOCAL, matchedRule) -> matchedRule!!
+                useAi -> runCatching { AiChatClient.generate(config!!, profile, history) }
+                    .getOrElse { OfflineConversationEngine.reply(profile, text, stage, recentReplies, priorUser, previous.exchangeCount) }
+                else -> OfflineConversationEngine.reply(profile, text, stage, recentReplies, priorUser, previous.exchangeCount)
+            }
             dao.insertMessage(ChatMessageEntity(profileId=profile.id, sender="them", message=reply, createdAt=System.currentTimeMillis()))
             val day = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date(now))
             val days = (previous.activeDays.split(",").filter { it.isNotBlank() } + day).distinct().takeLast(30).joinToString(",")

@@ -52,6 +52,7 @@ fun LovelyApp(vm: LovelyViewModel) {
     val messages by vm.messages.collectAsStateWithLifecycle()
     val preferences by vm.preferences.collectAsStateWithLifecycle()
     val own by vm.ownProfile.collectAsStateWithLifecycle()
+    val aiPreferences by vm.aiPreferences.collectAsStateWithLifecycle()
     val pref = preferences ?: PreferencesEntity()
     val mine = own ?: OwnProfileEntity()
     val discover = remember(unseen,pref,mine) {
@@ -106,7 +107,7 @@ fun LovelyApp(vm: LovelyViewModel) {
                 Tab.Chats -> Chats(chatProfiles,active,activeMessages,{activeId=it.id},
                     {p,msg->vm.send(p,msg)},{vm.removeConversation(it.id);activeId=""},{activeId=""},{tab=Tab.Discover.name},
                     {editor=it})
-                Tab.Profile -> ProfileSettings(profiles,mine,pref,vm::saveOwn,vm::savePreferences,
+                Tab.Profile -> ProfileSettings(profiles,mine,pref,aiPreferences,vm::saveOwn,vm::savePreferences,vm::saveAiSettings,
                     {add=true},{editor=it},vm::delete,vm::reset)
             }
         }
@@ -342,11 +343,16 @@ fun LovelyApp(vm: LovelyViewModel) {
     }
 }
 
-@Composable private fun ProfileSettings(profiles:List<ProfileEntity>,own:OwnProfileEntity,p:PreferencesEntity,saveOwn:(OwnProfileEntity)->Unit,savePrefs:(PreferencesEntity)->Unit,add:()->Unit,edit:(ProfileEntity)->Unit,delete:(ProfileEntity)->Unit,reset:()->Unit) {
+@Composable private fun ProfileSettings(profiles:List<ProfileEntity>,own:OwnProfileEntity,p:PreferencesEntity,ai:AiPreferences,saveOwn:(OwnProfileEntity)->Unit,savePrefs:(PreferencesEntity)->Unit,saveAi:(AiProvider,String,ConversationMode,String?,Boolean)->Unit,add:()->Unit,edit:(ProfileEntity)->Unit,delete:(ProfileEntity)->Unit,reset:()->Unit) {
     var name by remember(own.name) { mutableStateOf(own.name) }
     var bio by remember(own.bio) { mutableStateOf(own.bio) }
     var mine by remember(own.interests) { mutableStateOf(own.interests) }
     var confirm by remember { mutableStateOf(false) }
+    var provider by remember(ai.provider) { mutableStateOf(ai.provider) }
+    var model by remember(ai.provider,ai.model) { mutableStateOf(ai.model) }
+    var mode by remember(ai.mode) { mutableStateOf(ai.mode) }
+    var apiKey by remember { mutableStateOf("") }
+    var clearKey by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp),verticalArrangement=Arrangement.spacedBy(14.dp)) {
         Header("Your private space","Your profile.","Manage your profile library and preferences.")
         Surface(shape=RoundedCornerShape(23.dp),color=MaterialTheme.colorScheme.surface,modifier=Modifier.fillMaxWidth()) {
@@ -355,6 +361,36 @@ fun LovelyApp(vm: LovelyViewModel) {
                 OutlinedTextField(bio,{bio=it},Modifier.fillMaxWidth(),label={Text("About me")},minLines=2)
                 OutlinedTextField(mine,{mine=it},Modifier.fillMaxWidth(),label={Text("My interests, comma separated")})
                 Button(onClick={saveOwn(OwnProfileEntity(name=name,bio=bio,interests=mine))},Modifier.fillMaxWidth()) { Text("Save my profile") }
+            }
+        }
+        Surface(shape=RoundedCornerShape(23.dp),color=MaterialTheme.colorScheme.surface,modifier=Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
+                Text("AI conversations",style=MaterialTheme.typography.titleLarge,fontWeight=FontWeight.Bold)
+                Text("Use your own provider key for flexible character conversations. Local dialogue remains available and works offline.",fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Conversation mode",fontWeight=FontWeight.SemiBold)
+                Row(horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                    FilterChip(mode==ConversationMode.LOCAL,{mode=ConversationMode.LOCAL},label={Text("Local")})
+                    FilterChip(mode==ConversationMode.HYBRID,{mode=ConversationMode.HYBRID},label={Text("Hybrid")})
+                    FilterChip(mode==ConversationMode.AI_ONLY,{mode=ConversationMode.AI_ONLY},label={Text("AI only")})
+                }
+                Text(when(mode) {
+                    ConversationMode.LOCAL -> "Authored rules and the offline character engine. No API calls."
+                    ConversationMode.HYBRID -> "Your authored triggers win first. AI handles messages without a matching rule."
+                    ConversationMode.AI_ONLY -> "Send fictional-character messages to the selected AI provider."
+                },fontSize=11.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Provider",fontWeight=FontWeight.SemiBold)
+                Row(horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                    FilterChip(provider==AiProvider.GEMINI,{provider=AiProvider.GEMINI;model="gemini-2.5-flash"},label={Text("Gemini")})
+                    FilterChip(provider==AiProvider.OPENROUTER,{provider=AiProvider.OPENROUTER;model="openrouter/auto"},label={Text("OpenRouter")})
+                }
+                OutlinedTextField(model,{model=it},Modifier.fillMaxWidth(),label={Text("Model ID")},placeholder={Text(if(provider==AiProvider.GEMINI) "gemini-2.5-flash" else "openrouter/auto")},singleLine=true)
+                OutlinedTextField(apiKey,{apiKey=it;clearKey=false},Modifier.fillMaxWidth(),label={Text(if(ai.hasKey) "Replace API key (leave blank to keep saved key)" else "API key")},placeholder={Text("Paste your provider key")},singleLine=true)
+                Row(verticalAlignment=Alignment.CenterVertically) {
+                    Text(if(ai.hasKey && !clearKey) "A key is saved securely on this device." else "No API key saved.",fontSize=11.sp,color=MaterialTheme.colorScheme.onSurfaceVariant,modifier=Modifier.weight(1f))
+                    if(ai.hasKey) TextButton(onClick={clearKey=true;apiKey=""}) { Text("Remove key",color=MaterialTheme.colorScheme.error) }
+                }
+                Button(onClick={saveAi(provider,model,mode,apiKey.takeIf{it.isNotBlank()},clearKey);apiKey="";clearKey=false},Modifier.fillMaxWidth()) { Text("Save AI settings") }
+                Text("Keys are encrypted with Android Keystore and stay on this device. AI mode sends conversation context to your chosen provider. Provider charges and privacy policies apply.",fontSize=10.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
         Surface(shape=RoundedCornerShape(23.dp),color=MaterialTheme.colorScheme.surface,modifier=Modifier.fillMaxWidth()) {
@@ -391,8 +427,8 @@ fun LovelyApp(vm: LovelyViewModel) {
         Surface(shape=RoundedCornerShape(23.dp),color=MaterialTheme.colorScheme.surface,modifier=Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(7.dp)) {
                 Text("Privacy, by design",style=MaterialTheme.typography.titleLarge,fontWeight=FontWeight.Bold)
-                Privacy("Storage","This device"); Privacy("AI services","Not used"); Privacy("Backend","Not required"); Privacy("Internet permission","Not requested"); Privacy("Real-person records","Private notes only")
-                Text("Local data is not synced or encrypted. Only store information you have permission to keep.",fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                Privacy("Storage","This device"); Privacy("AI services",if(ai.mode==ConversationMode.LOCAL) "Off" else ai.provider.name); Privacy("Backend","Not required"); Privacy("Internet permission",if(ai.mode==ConversationMode.LOCAL) "Not used" else "Used only for AI"); Privacy("Real-person records","Private notes only")
+                Text("Profiles and chats stay local. API keys are encrypted on-device. When AI mode is used, selected conversation context is sent to your chosen provider. Only store information you have permission to keep.",fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
                 OutlinedButton(onClick={confirm=true},Modifier.fillMaxWidth()) { Text("Reset all local data",color=MaterialTheme.colorScheme.error) }
             }
         }

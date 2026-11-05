@@ -7,6 +7,13 @@ import kotlinx.coroutines.launch
 
 class LovelyViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = LovelyRepository(LovelyDatabase.get(application).lovelyDao())
+    private val aiStore = AiConfigStore(application)
+    private val _aiPreferences = MutableStateFlow(aiStore.loadPreferences())
+    val aiPreferences = _aiPreferences.asStateFlow()
+    fun saveAiSettings(provider: AiProvider, model: String, mode: ConversationMode, key: String?, clearKey: Boolean = false) {
+        aiStore.save(provider, model, mode, key, clearKey)
+        _aiPreferences.value = aiStore.loadPreferences()
+    }
     val profiles = repository.profiles.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val unseen = repository.unseen.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val likes = repository.likes.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -20,7 +27,7 @@ class LovelyViewModel(application: Application) : AndroidViewModel(application) 
     fun save(profile: ProfileEntity) { viewModelScope.launch { repository.saveProfile(profile) } }
     fun delete(profile: ProfileEntity) { viewModelScope.launch { repository.deleteProfile(profile.id) } }
     fun removeConversation(id: String) { viewModelScope.launch { repository.removeConversation(id) } }
-    fun send(profile: ProfileEntity, message: String) { viewModelScope.launch { repository.send(profile, message) } }
+    fun send(profile: ProfileEntity, message: String) { viewModelScope.launch { repository.send(profile, message, aiStore.loadRuntime()) } }
     fun savePreferences(value: PreferencesEntity) { viewModelScope.launch { repository.savePreferences(value) } }
     fun saveOwn(value: OwnProfileEntity) { viewModelScope.launch { repository.saveOwn(value) } }
     fun reset() { viewModelScope.launch { repository.reset() } }
